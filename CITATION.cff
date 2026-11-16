@@ -2,6 +2,7 @@ cff-version: 1.2.0
 message: "If you use this code or data, please cite the paper in preferred-citation."
 title: "Recovered or Repaired? Harness, three-round oracle, and run records"
 version: "1.0"
+doi: 10.5281/zenodo.24271570
 type: software
 abstract: >-
   Code and data for the paper "Recovered or Repaired? A Three-Round External Oracle for LLM Agents on Backend Incident

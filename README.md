@@ -3,7 +3,9 @@
 This repository is the artifact of the paper "Recovered or Repaired? A Three-Round External Oracle for LLM Agents on
 Backend Incident Remediation" by Pham Khanh Minh Man (The University of Danang, University of Science and Technology). It
 holds the oracle and the harness, the faulty releases, the port of the oracle to SREGym, the pre-registration log with its
-edit history, every run record, the analysis code, and the LaTeX sources of the paper.
+edit history, every run record, the analysis code, and the LaTeX sources of the paper. An archived copy is on Zenodo:
+[10.5281/zenodo.24271570](https://doi.org/10.5281/zenodo.24271570) (all versions; v1.0 is
+[10.5281/zenodo.24271571](https://doi.org/10.5281/zenodo.24271571)).
 
 Benchmarks for incident-handling agents usually ask one question at the end of an episode: is the system healthy again? A
 restart, a bigger connection pool, or an emptied log directory can make a symptom go away while the fault stays in the
