@@ -149,8 +149,9 @@ Additions, each logged in the pre-registration before the runs it governs:
 - 2026-11-14, a second AI arm with Gemini 4 Hydrogen, with everything else as for Haiku. It never ran: the model was
   withdrawn from the account before the batch (404 `model_unavailable`).
 - 2026-11-15, the rule for the Google arm: try Hydrogen 3 times 10 minutes apart, otherwise run the same design with
-  `gemini-3.8-flash` after 3 pilot runs. This arm stopped after its pilot and one main run when the provider disabled the
-  account. Its run records are in `results/sregym-wp2-pilot-gemini38/` and `results/sregym-wp2-gemini38/` (agent logs
+  `gemini-3.8-flash` after 3 pilot runs. This arm stopped after its pilot and two main runs (the second cut off before
+  scoring) when the provider disabled the account. Its run records are in `results/sregym-wp2-pilot-gemini38/` and
+  `results/sregym-wp2-gemini38/` (agent logs
   withheld) and are not analyzed.
 - 2026-11-15, a third AI arm with Sonnet 5.5, same design as Haiku (8 problems x 5 runs, 900 s, the same order; idle and
   restart shared), after 3 pilot runs that measured tokens (`results/sregym-wp2-pilot-sonnet/tokens.json`), driven by

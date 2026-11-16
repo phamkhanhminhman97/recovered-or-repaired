@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this code or data, please cite the paper in preferred-citation."
 title: "Recovered or Repaired? Harness, three-round oracle, and run records"
 type: software
-repository-code: "https://github.com/user97/recovered-or-repaired"
+repository-code: "https://github.com/phamkhanhminhman97/recovered-or-repaired"
 authors:
   - family-names: Pham
     given-names: Khanh Minh Man

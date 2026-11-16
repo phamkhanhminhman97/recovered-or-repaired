@@ -11,8 +11,9 @@ SREGym~\citep{clark2026sregym} cites the Stratus paper~\citep{chen2025stratus} a
 mitigation problems can be ``solved'' by a generic pod-restart loop. SREGym hides its fault injector and separates
 diagnosis from mitigation. Incident-Arena~\citep{fu2026incidentarena} goes further: before it accepts a repair, its safety
 gate restarts the affected service or fires the fault's trigger again and checks that the repair still holds. Durability
-checks are thus entering pass/fail gates, but we know of no study that measures how many of the successes a health check
-accepts they overturn, or what the fixes that survive them actually changed.
+checks are thus entering pass/fail gates, but we know of no study that measures, under controlled arms, how many of the successes a health check
+accepts they overturn, or what the fixes that survive them actually changed. In testing terms, the question is how good
+a health check is as a test oracle for remediation~\citep{barr2015oracle}.
 
 This paper asks that question with a controlled measurement, organized around research questions fixed before the runs:
 \begin{description}
@@ -30,18 +31,18 @@ benchmark built by others:
 \end{description}
 Our contributions are:
 \begin{enumerate}
-  \item \textbf{A three-round external oracle} that separates real fixes from temporary fixes by replaying the
+  \item \textbf{A three-round external oracle} that separates durable fixes from temporary fixes by replaying the
   incident-inducing load on the same system (round~2) and on a system rebuilt from the agent's code and configuration
   (round~3). All measurements come from Postgres, Redis, Docker, and the partner service, never from numbers the
   application reports about itself (Section~\ref{sec:oracle}). Ported to SREGym, the two extra rounds reject
-  hand-written workarounds that its mitigation oracle accepts in three of four problems, and accept every fix the
-  agents made there (Section~\ref{sec:sregym}).
+  workarounds we wrote that its mitigation oracle accepts in three of four problems, and confirm every agent fix that
+  SREGym's oracle accepted (Section~\ref{sec:sregym}).
   \item \textbf{Action-type ground truth.} Three of the twelve faults are configuration faults where rolling back is the
   correct action and nine are code faults where only a code change is correct. An agent arm that decides freely measures
   whether agents pick the right kind of action, as an action-appropriateness match (AAM).
-  \item \textbf{A pre-registered empirical study} with two model families, five arms, cluster-aware statistics, and a
-  fix-mechanism audit that exposes durable workarounds the oracle itself cannot tell apart from repairs, plus a
-  follow-up that compares two models of one family under the same isolation (Section~\ref{sec:results}).
+  \item \textbf{A pre-registered empirical study} with two model families, five arms, and cluster-aware statistics,
+  an exploratory fix-mechanism audit that exposes durable workarounds the oracle itself cannot tell apart from repairs,
+  and a follow-up that compares two models of one family under the same isolation (Section~\ref{sec:results}).
   \item \textbf{Evidence about answer leakage.} We document, with counts, how agents found the grader or the hidden
   partner across four isolation iterations, the definition of a contaminated run we converged on, and an isolation
   level that closes the remaining paths we found, including a Docker API proxy that refuses host mounts
@@ -75,7 +76,8 @@ the agent's code and configuration, and an audit of what the durable fixes chang
 a developer-chosen mitigation is applied to an agent that uses the Model Context Protocol (MCP) and records whether the
 run now passes. The mechanic resembles our
 round~2, but AgentCheck replays cached tool responses, its outcome is binary, and it has no stateful system, no notion of
-remediation versus mitigation, and no redeployment round.
+remediation versus mitigation, and no redeployment round. Chaos engineering injects faults into production systems to
+test their resilience~\citep{basiri2016chaos}; our rounds re-fire a fault's trigger after a fix to test the fix.
 
 \paragraph{Plausible but incorrect patches.} Automated program repair met the same gap with tests as the oracle. Most
 patches reported by three early generate-and-validate systems were not correct and were equivalent to deleting
@@ -116,7 +118,8 @@ the incident-inducing load, writes a ticket from what it measured, lets one arm 
 HTTP (identical for all arms), and then scores three rounds. A later round runs only if the earlier one passed.
 
 \begin{description}
-  \item[Round 1 (normal load).] Can the service serve ordinary traffic on the system the arm left behind?
+  \item[Round 1 (check).] Does the fault's criterion pass on the system the arm left behind? On the three accumulating
+  faults (F2, F6, F11) round~1 uses a light load; on the other nine it runs the same probe as round~2.
   \item[Round 2 (re-induce).] Replay the incident-inducing load on the same running system, without a restart. Does it break again?
   \item[Round 3 (redeploy).] Tear down containers and volumes, rebuild from the code and \texttt{.env} the agent left,
   and replay the inducing load. Is the fix part of the code and configuration, or did it live only in runtime state
@@ -128,8 +131,10 @@ HTTP (identical for all arms), and then scores three rounds. A later round runs 
 \[
 \MSR = P(V_1), \qquad \RSR = P(V_1 \wedge V_2 \wedge V_3), \qquad \SSR = P(V_1 \wedge \neg(V_2 \wedge V_3)),
 \]
-so that $\MSR = \RSR + \SSR$. MSR is what a conventional health check reports; the share $\SSR/\MSR$ is the fraction of
-conventional successes that are temporary. For the free arm, the action-appropriateness match $\AAM$ is the fraction of
+so that $\MSR = \RSR + \SSR$. We call a run that passes all three rounds a \emph{durable fix}; a durable fix need not
+remove the defect, and Section~\ref{sec:results} checks what each one changed. MSR is what a single check after the
+agent acts reports (here the fault's own criterion, stricter than a liveness probe); the share $\SSR/\MSR$ is the
+fraction of these conventional successes that are temporary. For the free arm, the action-appropriateness match $\AAM$ is the fraction of
 runs whose action type matches the
 fault group: a configuration-only change for group~A and a code change for group~B.
 
@@ -146,7 +151,8 @@ passed 111/111 on both machines used for the study.
 \begin{table}[t]
 \centering\small
 \caption{Faults. Group A: rolling back the configuration is the correct action. Group B: only a code change fixes the defect.
-Accumulating faults (F2, F6, F11) are the ones where a restart produces a temporary fix.}\label{tab:faults}
+Accumulating faults (F2, F6, F11) are the ones where a restart produces a temporary fix; on the other nine, rounds~1
+and~2 run the same probe.}\label{tab:faults}
 \begin{tabular}{@{}llp{0.27\linewidth}p{0.47\linewidth}@{}}
 \toprule
 Fault & Group & Faulty release & Pass criterion \\
@@ -175,7 +181,10 @@ Redis~7 that calls a simulated partner for payments, notifications, and prices. 
 \paragraph{Arms.} \emph{Idle} waits 120\,s (to measure self-healing); \emph{Restart} restarts the application twice;
 \emph{AI-mitigate} is told it may only use operational actions (restarts, \texttt{.env}, clearing temporary data);
 \emph{AI-remediate} is told it must fix the root cause in code; \emph{AI-free} receives no constraint. The prompt contains
-the ticket, the environment, and what may be changed; it names neither the fault nor the scoring.
+the ticket, the environment, and what may be changed; it names neither the fault nor the scoring. The remediation
+prompt adds that configuration-only or restart-only actions are not enough, also on the three configuration faults. The
+ticket is written in Vietnamese without diacritics and the rest of the prompt in English; some agents answered in
+Vietnamese (92 of 360 Haiku closing messages, none of Gemini's 180).
 
 \paragraph{Agent.} The agent is the Codex CLI (pinned to version 0.163.0-alpha.11.1) talking to each model through a
 local proxy, with reasoning effort fixed at \emph{medium} and a 300\,s limit per run. It works in a scratch copy outside
@@ -193,18 +202,25 @@ change that affected runs already collected.
 \paragraph{Statistics.} Runs on the same fault are not independent, so confidence intervals (CIs) come from a bootstrap
 that resamples faults (12 clusters, $B=5000$)~\citep{efron1993bootstrap}, and arms are compared with a
 Cochran--Mantel--Haenszel (CMH) test stratified by fault, with continuity correction~\citep{cochran1954,mantel1959}. We
-report the Mantel--Haenszel common odds ratio (OR) of a real fix; below 1, the first arm of a contrast reaches a real fix
-less often.
+report the Mantel--Haenszel common odds ratio (OR) of a durable fix; below 1, the first arm of a contrast reaches a
+durable fix less often. The bootstrap interval of a difference resamples faults while the CMH test conditions on them,
+so the two can disagree when an effect is consistent within faults but faults differ in difficulty. We report
+unadjusted $p$-values for the three contrasts per model; with a Holm correction within each model, no contrast changes
+its significance at 0.05. The pre-registration first named a mixed-effects logistic regression; we replaced it with the
+CMH test before any agent run, because the analysis environment had no mixed-model library.
 
 \paragraph{Contaminated runs.} A run is flagged \emph{peek} if the agent accessed the grader, the partner's code or port,
 or the administrative token (Section~\ref{sec:leakage}); flagged runs are excluded from the primary analysis. The Haiku
 runs predate our final definition and flag every command that mentions these targets (\numpeekHaiku/\numairunsHaiku{}
 agent runs); the Gemini runs flag only successful accesses (\numpeekGemini/\numairunsGemini{}). Both are within the
-pre-registered 5\% gate. Counting the excluded runs as failures, or keeping their oracle verdicts, moves no arm's RSR by
+pre-registered 5\% gate; under the earlier string definition the Gemini set (\numpeekStringGemini/\numairunsGemini) would
+not be. Counting the excluded runs as failures, or keeping their oracle verdicts, moves no arm's RSR by
 more than 0.05 and changes no arm comparison (Haiku: OR 0.07--0.12, all $p<0.0001$; Gemini: mitigation versus
 remediation $p=0.27$--$0.28$, versus free $p\le0.003$). Applying the success-based definition to Haiku flags
 \numpeekSuccessHaiku{} runs (in the others, the sandbox blocked the access) and moves no RSR by more than 0.02.
-Time-outs are kept as outcomes.
+Runs flagged \emph{tamper} (files edited outside \texttt{src/}, \texttt{db/}, and \texttt{.env}; 7 Haiku and 2 Gemini
+runs) stay in the analysis, as pre-registered; excluding them moves no RSR by more than 0.03, and only Gemini's
+remediation-versus-free contrast changes status ($p=0.08$ to $p=0.04$). Time-outs are kept as outcomes.
 
 \paragraph{LLM assistance.} \aiusestatement
 
@@ -212,22 +228,30 @@ Time-outs are kept as outcomes.
 
 \begin{table}[t]
 \centering\scriptsize
-\caption{Outcomes by arm (peek runs excluded). MSR is what a conventional health check reports; RSR passes all three
-rounds; SSR passes round~1 but fails round~2 or~3. 95\% CIs from a bootstrap over faults.}\label{tab:outcomes}
+\caption{Outcomes by arm (peek runs excluded). MSR is what a single check reports; RSR passes all three rounds; SSR
+passes round~1 but fails round~2 or~3. 95\% CIs from a bootstrap over faults; [0.00, 0.00] means no run of the arm
+reached the outcome, and rates may not add up because of rounding.}\label{tab:outcomes}
 \fittable{\input{tables/outcomes}}
 \end{table}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{../results/figures/outcomes_by_arm.pdf}
-\caption{Share of runs that are real fixes, temporary fixes, or not recovered, per arm and model.}\label{fig:outcomes}
+\caption{Share of runs that are durable fixes, temporary fixes, or not recovered, per arm and model.}\label{fig:outcomes}
 \end{figure}
 
 \paragraph{RQ2: how many conventional successes are temporary?} Table~\ref{tab:outcomes} and Figure~\ref{fig:outcomes}
 answer this. The restart baseline recovers a quarter of the runs by the conventional check, and every one of them is
 temporary: they are exactly the three accumulating faults, as the validation gate predicted. Among agent arms, temporary
 fixes concentrate in the mitigation-only arm: \nummitTempShareHaiku\% of its conventional successes for Haiku and
-\nummitTempShareGemini\% for Gemini fail round~2 or~3. With twelve faults this share depends on which faults are included:
+\nummitTempShareGemini\% for Gemini fail round~2 or~3; for Haiku they are F2 and F6 (10 and 9 runs). Round~2 caught
+almost all temporary verdicts: 57 of Haiku's 58 across arms failed there, 56 of them on the accumulating faults (the
+other, on F10, delivered 20 of 20 notifications in round~1 and 19 of 20 in round~2). The 58th failed round~3 only
+because the rebuild could not reach Docker Hub; the pre-registered infrastructure rule covers only the start of a run,
+so it stays scored (without it, the remediation arm's RSR is 0.85 and its SSR 0.05). Round~3 mattered for Gemini: 8 of
+its 16 temporary verdicts failed only there, six of them mitigation runs that changed the database by hand (five created
+the missing F7 index) and two remediation runs that hit the time limit and left a service that did not start after the
+rebuild. With twelve faults the share also depends on which faults are included:
 leaving out one fault at a time gives 23--49\% for Haiku (23\% without F2) and 23--39\% for Gemini. When agents may
 change code, temporary fixes are rare (at most 6\%
 of runs). The idle arm never recovered, so the improvements are not self-healing.
@@ -238,22 +262,24 @@ of runs). The idle arm never recovered, so the improvements are not self-healing
 \fittable{\input{tables/contrasts}}
 \end{table}
 
-\paragraph{Mitigation versus remediation.} For Haiku, the mitigation-only arm reaches a real fix far less often than the
+\paragraph{Mitigation versus remediation.} For Haiku, the mitigation-only arm reaches a durable fix far less often than the
 remediation arm (Table~\ref{tab:contrasts}), and leaving out one fault at a time keeps the contrast (OR 0.06--0.10, every
-$p<0.001$). For Gemini the same contrast is not significant, and it is not robust either: without F12 it reaches
+$p<0.001$). Because the mitigation prompt forbids code changes, part of this contrast only checks that the agent
+followed its instruction; the temporary share and what the durable fixes changed are the informative quantities. For
+Gemini the same contrast is not significant, and it is not robust either: without F12 it reaches
 $p=0.02$, without F3 $p=1.0$, so the data neither show nor rule out a difference. Two factors contribute.
 First, Gemini ran out of time in \numtimeoutsGemini{} of its non-excluded runs, most often in the remediation arm (36 of
-55 runs), while Haiku never did; every Gemini remediation or free run that finished in time was a real fix. Second, the
+55 runs), while Haiku never did; every Gemini remediation or free run that finished in time was a durable fix. Second, the
 mitigation arm receives credit for durable workarounds, which we examine next. Repetitions on the same fault are not
-equally reliable either: averaged over faults, the probability that three repetitions are all real fixes (pass$^3$) is
+equally reliable either: averaged over faults, the probability that three repetitions are all durable fixes (pass$^3$) is
 0.70 for Haiku's remediation arm against 0.84 for one run, and 0.36 against 0.52 for Gemini's. Gemini's mitigation arm
 stays at 0.42 for both, because each fault is either always or never fixed by it.
 
 \begin{table}[t]
 \centering\scriptsize
-\caption{Fix mechanism on the nine code faults (group B). A real fix without any code change is a durable configuration
+\caption{Fix mechanism on the nine code faults (group B). A durable fix without any code change is a configuration
 workaround: it passes all three rounds but leaves the defect in place. ``Defect removed'' requires a code change that
-matches the fault's repair signature or deletes the construct that holds the defect; code workarounds are real fixes
+matches the fault's repair signature or deletes the construct that holds the defect; code workarounds are durable fixes
 that change code but do neither.}\label{tab:mechanism}
 \fittable{\setlength{\tabcolsep}{3.5pt}\input{tables/mechanism}}
 \end{table}
@@ -261,20 +287,21 @@ that change code but do neither.}\label{tab:mechanism}
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.9\linewidth]{../results/figures/code_fault_mechanism.pdf}
-\caption{Outcomes on the nine code faults, with real fixes split into those that removed the defect and durable
+\caption{Outcomes on the nine code faults, with durable fixes split into those that removed the defect and
 workarounds (configuration or code) that pass all three rounds but leave it in place.}\label{fig:mechanism}
 \end{figure}
 
-\paragraph{The oracle still credits durable workarounds.} Group-B faults live in code, so a real fix that changes no code
-cannot have removed the defect. Table~\ref{tab:mechanism} and Figure~\ref{fig:mechanism} show that every real fix of the mitigation-only arm on a code
+\paragraph{The oracle still credits durable workarounds.} Group-B faults live in code, so a durable fix that changes no code
+cannot have removed the defect. Table~\ref{tab:mechanism} and Figure~\ref{fig:mechanism} show that every durable fix of the mitigation-only arm on a code
 fault is of this kind, for both models, and that they come from two faults: setting \texttt{POOL\_MAX=1} for the deadlock
 in F9 (serializing all database work) and \texttt{LOG\_LEVEL=warn} for the missing log rotation in F11 (the disk fills more
-slowly and outlasts our load window). Both persist in \texttt{.env}, so round~3 cannot catch them. Every real fix of the
+slowly and outlasts our load window). Both persist in \texttt{.env}, so round~3 cannot catch them. Every durable fix of the
 remediation and free arms on code faults included a code change, but a code change is not yet a repair. We checked each
 one against a repair signature per fault, written from the faulty release and the reference fix (for example, locking
 the two accounts in a fixed order for F9, restoring a size check or rotation for F11) and confirmed by reading the
 diffs. Thirteen Haiku runs did not match. Eleven deleted the construct that held the defect, the pattern known from
-program repair~\citep{qi2015plausibility}. Four removed the statement cache of F6, which ends the leak at the cost of
+program repair~\citep{qi2015plausibility}; it removes the defect at some cost in function, so we count these runs as
+removing the defect and give a stricter count below. Four removed the statement cache of F6, which ends the leak at the cost of
 caching. Seven ran the statements of F2 without a transaction, so no connection is held across the partner call; all
 seven made the same change and added no error handling, so a failed charge now leaves a pending order that the original
 rollback removed, a change in failure behavior that the F2 criterion does not check. Two are workarounds in code. One
@@ -285,11 +312,11 @@ orders are paid and charged, not the amount. The other lowered the log level of 
 mitigation-only arm repairs no code fault for either model, while the remediation arm repairs 0.89 (Haiku) and 0.61
 (Gemini) of them; counting the seven F2 runs as workarounds lowers Haiku's rate to 0.82. A durability oracle therefore
 needs a mechanism check to report repairs rather than durable outcomes.
-Configuration faults show the same pattern: three real fixes of F12 (two Haiku remediation runs and one Gemini free run)
+Configuration faults show the same pattern: three durable fixes of F12 (two Haiku remediation runs and one Gemini free run)
 raised worker concurrency, one also caching prices, and left the 60\,s partner timeout in place; each order still waits
-3\,s for the slow partner, but 20 orders now fit the 10\,s window. All other real fixes of group~A restored the previous
+3\,s for the slow partner, but 20 orders now fit the 10\,s window. All other durable fixes of group~A restored the previous
 value or capped the timeout in code. The pattern replicates in two run sets that we report only as auxiliary data (Haiku~5.5
-with the partner inside Docker, whose contamination gate failed, and a Haiku~4.5 pilot): every real fix of the
+with the partner inside Docker, whose contamination gate failed, and a Haiku~4.5 pilot): every durable fix of the
 mitigation-only arm on a code fault is a configuration workaround (8 and 2 runs, nine of them \texttt{POOL\_MAX=1} for
 F9), three F12 fixes again added workers, and the remediation arm removed the defect from the code in 0.91 and 0.74 of
 its code-fault runs (0.87 and 0.74 if dropping the F2 transaction counts as a workaround). This audit was added after the
@@ -298,7 +325,7 @@ data were seen and is exploratory.
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.9\linewidth]{../results/figures/real_fix_by_fault.pdf}
-\caption{Real-fix rate by fault and agent arm. (A) marks configuration faults.}\label{fig:faults}
+\caption{Durable-fix rate by fault and agent arm. (A) marks configuration faults.}\label{fig:faults}
 \end{figure}
 
 \paragraph{RQ1: do agents choose the right kind of action?} Table~\ref{tab:aam} reports AAM for the free arm. Haiku picks
@@ -321,25 +348,26 @@ faults.}\label{tab:wp4}
 \fittable{\input{tables/wp4}}
 \end{table}
 
-\paragraph{A stronger model under the same isolation.} To ask whether a stronger model of the same family makes fewer
+\paragraph{A larger model under the same isolation.} To ask whether a larger model of the same family makes fewer
 temporary fixes, and to compare two models without the infrastructure difference above, we ran Sonnet~5.5 and Haiku~5.5 on
 all twelve faults in the mitigation-only and remediation arms, three runs per fault and arm (\numwpfourRunsSonnet{} runs
 per model), under the final isolation level of Section~\ref{sec:leakage}, with the protocol and the primary test fixed in
 the log before the runs (Table~\ref{tab:wp4}; one Haiku run was flagged \emph{peek} and excluded). In the mitigation-only
 arm the share of temporary fixes was \numwpfourShareMitSonnet{} for Sonnet and \numwpfourShareMitHaikuV{} for Haiku, but
 the gap does not come from how the two models fixed the same fault. On each of the four faults that both mitigated, every
-run got the same verdict: real on F1, F8, and F9, temporary on F2. Haiku also cleared F6, the memory leak, by restarting,
+run got the same verdict: durable on F1, F8, and F9, temporary on F2. Haiku also cleared F6, the memory leak, by restarting,
 which is temporary every time, and Sonnet cleared the configuration fault F12, which Haiku never did. The pre-registered
 stratified test of the temporary share is therefore undefined, because no fault varies within it. The mechanism audit
-repeats the main finding for both models: no mitigation-only real fix on a code fault removed the defect
+repeats the main finding for both models: no mitigation-only durable fix on a code fault removed the defect
 (\numwpfourCfgWkMitSonnet{} and \numwpfourCfgWkMitHaikuV{} configuration workarounds on F9). In the remediation arm Sonnet
-reached a real fix in \numwpfourRsrRemSonnet{} of runs and Haiku in \numwpfourRsrRemHaikuV{} (stratified OR
+reached a durable fix in \numwpfourRsrRemSonnet{} of runs and Haiku in \numwpfourRsrRemHaikuV{} (stratified OR
 \numwpfourRealOrRem, $p=\numwpfourRealPRem$); on the nine code faults the two removed the defect about equally often
 (\numwpfourCodeFixRemSonnet{} and \numwpfourCodeFixRemHaikuV{} of runs), and the gap comes from the configuration faults
 F8 and F12. Under this isolation Haiku's temporary share in the mitigation-only arm (\numwpfourShareMitHaikuV) and its
 remediation RSR (\numwpfourRsrRemHaikuV) stay close to its main-study values (\numwpfourShareMitHaikuThree{} and
-\numwpfourRsrRemHaikuThree), so the change of isolation did not move them much. In these runs, whether a fix was
-temporary was set by the fault and by the actions the arm allows, not by which of the two models acted.
+\numwpfourRsrRemHaikuThree), so the change of isolation did not move them much. On the faults both models cleared, the
+verdict depended on the fault and on the actions the arm allows; the models differed in which faults they cleared, and
+with three runs per fault and arm we could not detect a model effect.
 
 \paragraph{Time-out sensitivity (stopped).} To separate the time limit from model behavior we pre-registered a follow-up
 that repeats the Gemini study with a 900\,s limit. We stopped it after six runs. In one of them the agent mounted the
@@ -357,7 +385,7 @@ recorded the decision in the pre-registration log before any summary was labelle
 its place. The blinded rating packages and the rating guide are part of the release, so the analysis can be run as
 pre-registered. Reading summaries during the fix-mechanism audit, we saw that agents sometimes qualify their own
 workarounds: one Haiku run that set \texttt{POOL\_MAX=1} for F9 called its change a temporary mitigation, although the
-oracle scores it as a real fix.
+oracle scores it as a durable fix.
 
 \section{A Second System: SREGym (RQ4)}\label{sec:sregym}
 
@@ -366,7 +394,8 @@ the agent fixes that SREGym's own mitigation oracle accepts, how many fail round
 suite~\citep{clark2026sregym} at commit \texttt{909f558} on a four-node kind cluster on a laptop (Docker with 8 CPUs and
 16\,GB), with a deployment profile that drops observability add-ons no part of SREGym reads; scores are therefore not
 comparable with SREGym's leaderboard, and we make no such comparison. Twelve of the 17 Lite problems ran on this machine
-(one fault did not reproduce; four need amd64-only images). We kept eight. In \emph{group~A}, the trigger can be fired
+(one fault did not reproduce; four need amd64-only images). We kept eight; the other four are static configuration
+faults whose trigger cannot be fired separately, so only round~3 would apply to them. In \emph{group~A}, the trigger can be fired
 separately and SREGym's oracle has no durability step: a Service that selects the wrong pods, a Kafka consumer blocked by
 a poisoned record, a rotated database password that running pods still hold, and a Service whose internal traffic policy
 is local. In \emph{group~B}, SREGym's oracle already replays the load or reruns the work, so our rounds should agree with it.
@@ -376,8 +405,11 @@ state the agent left, from a hook in SREGym's conductor. Round~2 fires the trigg
 (for Kafka, five valid records, a poisoned one, and five more; another rotation of the password; new scheduled Jobs; new
 objects with the blocking finalizer; the load burst again); the wrong-selector and traffic-policy problems have no
 round~2. Round~3 recreates every application pod from its current specification and reruns SREGym's oracle, up to three
-times. Before any agent ran, each problem passed a validation, three times each: reference fixes and our hand-written
-durable fixes passed every round, and in three of the four group~A problems a hand-written workaround that SREGym's
+times. Unlike round~3 on \texttt{order-service}, it keeps volumes and data stores, because SREGym injects its faults
+into running objects rather than into the deployment charts. Before any agent ran, each problem passed a validation with
+three matching repeats (for the rotated password, an earlier repeat failed because our round-2 restore left database
+sessions open, and was rerun after the fix): reference fixes and our own durable fixes passed every round, and in three
+of the four group~A problems a workaround we wrote that SREGym's
 oracle accepts failed round~2 or~3 every time (relabeling the running pods instead of the pod template; moving the
 consumer group past the poisoned record, which is SREGym's own reference recovery; writing the rotated password into the
 Deployment). In the fourth, scaling the backend to one replica per node survived pod recreation, so there a workaround
@@ -386,15 +418,16 @@ can pass every round.
 \paragraph{Arms and runs.} \emph{Idle} is scored 120\,s after injection and \emph{Restart} restarts the affected
 Deployment twice ($N=3$ per problem each; the CronJob problem has no Restart arm). \emph{AI} ($N=5$) is SREGym's own
 Codex agent and task prompt, limited to the mitigation stage, with a 900\,s limit and the same local proxy, run once with
-Haiku~5.5 and once with Sonnet~5.5, a stronger model of the same family added to the log before its runs. The agent runs
+Haiku~5.5 and once with Sonnet~5.5, a larger model of the same family added to the log before its runs. The agent runs
 in SREGym's hardened container with filtered Internet access; it mounts only its log directory, a kubeconfig, and the
 load scripts, and it cannot see SREGym's code, our rounds, or the namespaces SREGym hides. The 85 runs of the Haiku study
 (40 AI) ran in an order shuffled with a fixed seed, and the 40 Sonnet runs followed the order of Haiku's AI runs; every run
 redeploys the application and re-injects the fault, and Idle and Restart are shared between the models. The design and
 the primary analysis were fixed in the pre-registration log before the first run: in group~A, the share of temporary
-fixes among AI runs that pass round~1, with a Wilson 95\% interval~\citep{wilson1927}; the comparison of the two models
-is descriptive. A third AI arm with a Google model was also registered; it stopped after three pilot runs and one main
-run when the provider disabled the account it ran under, and its runs are released but not analyzed.
+fixes among AI runs that pass round~1, with a Wilson 95\% interval~\citep{wilson1927}, which treats runs as independent and is optimistic with four problems; the comparison of the two models
+is descriptive. A third AI arm with a Google model was also registered; it stopped after three pilot runs and two main runs
+(the second cut off before scoring) when the provider disabled the account it ran under; its runs are released but not
+analyzed and are not shown in Table~\ref{tab:rq4}.
 
 
 \begin{table}[t]
@@ -428,7 +461,7 @@ whose evaluation, SREGym's oracle followed by our rounds, exceeded SREGym's 300\
 bounds the wait for the evaluation, so that the rule could not drop accepted runs.
 
 \paragraph{Interpretation.} SREGym's oracle would have credited the workarounds of the validation, but when either
-model fixed a group-A problem it chose the durable change, and the stronger model recovered more often (all five Kafka
+model fixed a group-A problem it chose the durable change, and the larger model recovered more often (all five Kafka
 runs, three group-B runs) without producing a temporary fix. On these problems the durable fix is itself an operational
 change (a label, a selector, a policy field, a restart, a script held in a ConfigMap, an RBAC rule), so the cheapest
 action that clears the symptom also removes the defect. In \texttt{order-service} the defect sits in application code,
@@ -466,8 +499,8 @@ that launched the harness, including the SSH agent socket and sockets of the des
 experiment; they could also read SSH keys, query the keychain, connect to the harness's terminal multiplexer, and launch
 applications outside the sandbox. Scanning every command in all run sets found no use of these paths beyond listing
 them (\texttt{env} in three Gemini runs, a list of terminal sessions in one) and the Docker restart above. We then built
-a further isolation level, used in none of the reported
-runs: a Docker API proxy that refuses host mounts and privileged containers, a minimal environment, and sandbox rules
+a further isolation level, used in none of the main-study runs and in every run of the follow-up in
+Table~\ref{tab:wp4}: a Docker API proxy that refuses host mounts and privileged containers, a minimal environment, and sandbox rules
 that deny these credentials, sockets, and launchers and let the agent signal only its own processes. All 49 commands of
 a scripted check, from ordinary Docker and Compose use to each path above, behave as intended.
 
@@ -489,8 +522,8 @@ built from real incidents rarely have known fixes, which is one reason to keep i
 
 \paragraph{Where temporary fixes come from.} Across the two systems, temporary fixes appeared where the cheapest action
 available to the agent did not reach the defect: on \texttt{order-service}'s code faults, above all for the agent limited
-to operational actions, and in none of Haiku's accepted SREGym fixes, where the durable fix is a configuration change
-(Section~\ref{sec:sregym}). The risk sits in the oracle rather than in a particular agent: SREGym's mitigation oracle
+to operational actions, and in none of either model's accepted SREGym fixes, where the durable fix is a configuration
+change (Section~\ref{sec:sregym}). This is a pattern from two systems, not a tested rule. The risk sits in the oracle rather than in a particular agent: SREGym's mitigation oracle
 accepted hand-written workarounds in three of the four problems we could test, and an agent that takes that shortcut on
 such a problem would be scored as a success.
 
@@ -512,7 +545,9 @@ depending on the definition. We recommend defining contamination by successful a
 \section{Threats to Validity}\label{sec:threats}
 
 \emph{External validity.} One application and twelve injected faults; results may not transfer to other systems or to
-real incidents. On SREGym (Section~\ref{sec:sregym}) two models of one family ran on eight problems, five times each, on a
+real incidents. The share of temporary fixes is a property of this fault set: it depends on how many faults accumulate,
+on the actions each arm allows, and on the length of the round-2 load, so it shows that the gap exists rather than
+estimating its size elsewhere. On SREGym (Section~\ref{sec:sregym}) two models of one family ran on eight problems, five times each, on a
 laptop cluster with a reduced deployment profile; the agreement of our rounds with SREGym's own durability steps rests on
 the validation runs and three agent fixes. \emph{Two models, different infrastructure.} The Gemini runs used a stricter sandbox, a clean agent home,
 a different machine, and a success-based contamination flag; we report both flag definitions. The Haiku runs used the
@@ -521,7 +556,8 @@ was not recorded; excluding them barely changes RSR (0.25, 0.84, and 0.75 for th
 isolation level (Table~\ref{tab:wp4}) puts Haiku's numbers close to its main-study values, which suggests the isolation
 change matters little for Haiku; it does not remove the confound for Gemini, whose account the provider disabled before a
 same-isolation rerun. \emph{Time limit.} 300\,s
-was fixed in advance for all models; it constrains Gemini far more than Haiku, and the follow-up meant to separate the
+was fixed in advance for all models and is wall-clock time, so it includes the provider's latency; it constrains Gemini
+far more than Haiku, and the follow-up meant to separate the
 two was stopped (Section~\ref{sec:results}).
 \emph{Clustered data.} The effective sample size is twelve faults; we use a fault-level bootstrap and stratified tests.
 \emph{Oracle thresholds and load windows} were fixed in advance and validated on reference fixes, but a workaround that
@@ -529,7 +565,10 @@ slows a leak (F11) can outlast any finite window, and criteria check outcomes th
 service must keep (the F4 criterion does not check charged amounts, and one run passed after deleting the currency
 conversion; the F2 criterion does not check what a failed order leaves behind, and seven runs passed after dropping the
 transaction). We left the criteria unchanged after seeing the data. \emph{Tickets} are written by the harness from measurements and may steer
-diagnosis. \emph{Repair signatures} are regular expressions written after the data were seen. Every real fix that did
+diagnosis; they are in Vietnamese without diacritics inside an English prompt, some closing messages are in Vietnamese
+as a result (Haiku 92 of 360 in the main study and 8 of 72 in the follow-up, Sonnet 3 of 72, Gemini none of 180), and we
+did not test English tickets. \emph{Repair signatures} are regular expressions written after the data were seen, and the author was the only
+rater. Every durable fix that did
 not match one was read by hand; for matching fixes we inspected the key added lines of every run (F4, F6, F9, F10, F11)
 or applied a second, independent check that the faulty construct of the release is gone (F2, F3, F5, F7; all 109 such
 runs passed). \emph{Post-hoc analyses} (fix mechanism, time-out
@@ -537,7 +576,9 @@ splits, pass$^k$) are labelled exploratory.
 \emph{Pre-registration} is a dated log in the project repository, not an entry in a public registry, so its dates rest
 on the log itself. One change affected a primary data set mid-run: the success-based contamination definition was adopted
 after 15 Gemini runs whose outcomes we had seen. It re-labelled flags only, and we report the older definition alongside
-(Section~\ref{sec:leakage}).
+(Section~\ref{sec:leakage}). Other deviations, each recorded in the log with its date: the main model changed from
+Haiku~4.5 to Haiku~5.5 after 40 runs; a first Haiku~5.5 batch whose contamination gate failed (31/360) was set aside
+and rerun with the partner on the host; and the CMH test replaced the registered mixed-effects model.
 
 \section{Conclusion}
 
@@ -545,8 +586,8 @@ A healthy probe after an agent acts is a weak signal of repair. Replaying the in
 changes removes most temporary fixes from the count, especially for agents limited to operational actions; checking what
 the change did removes the durable workarounds that remain. Benchmarks for remediation agents should report all three
 views, and should define contamination by what an agent actually obtained rather than by what it typed.
-On SREGym, the same rounds found no temporary fix among the agent's accepted fixes, where the durable fix is a
-configuration change, but they caught every hand-written workaround that SREGym's oracle accepted; the extra rounds
-matter most where the cheapest action does not reach the defect.
-Under one isolation level, a stronger model of the same family mitigated each shared fault exactly as the weaker one did;
-what made a fix temporary was the fault and the actions allowed, not the model.
+On SREGym, the same rounds found no temporary fix among the agents' accepted fixes, where the durable fix is a
+configuration change, but they caught the workarounds we wrote in three of the four problems where SREGym's oracle has
+no durability step; the extra rounds matter most where the cheapest action does not reach the defect.
+Under one isolation level, a larger model of the same family gave the same verdict as the smaller one on every fault
+both mitigated; the two differed in which faults they cleared, and three runs per cell could not show a model effect.

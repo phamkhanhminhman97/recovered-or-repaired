@@ -7,10 +7,11 @@ edit history, every run record, the analysis code, and the LaTeX sources of the 
 
 Benchmarks for incident-handling agents usually ask one question at the end of an episode: is the system healthy again? A
 restart, a bigger connection pool, or an emptied log directory can make a symptom go away while the fault stays in the
-code. The oracle here scores from outside the system in three rounds. Round 1 replays normal traffic; round 2 replays the
-incident-inducing load on the same system; round 3 replays it on a system rebuilt from the code and configuration the
-agent left. A run that passes all three rounds is a real recovery, and a run that passes round 1 but fails a later round
-is a temporary one.
+code. The oracle here scores from outside the system in three rounds. Round 1 checks the fault's criterion on the system
+the agent left; round 2 replays the incident-inducing load on the same system; round 3 replays it on a system rebuilt
+from the code and configuration the agent left. A run that passes all three rounds is a durable fix, and a run that
+passes round 1 but fails a later round is a temporary one. The pre-registration and the analysis reports call a durable
+fix a real recovery. A durable fix can still leave the defect in place, so the fixes are also audited.
 
 ## Results
 
@@ -20,18 +21,19 @@ mitigate, must fix the code, or decides freely. The oracle was validated first o
 
 | v3 study | Claude Haiku 5.5 (600 runs) | Gemini 3.8 Flash (180 runs) |
 |---|---|---|
-| Real recovery (RSR): mitigate / remediate / free | 0.25 / 0.84 / 0.76 | 0.42 / 0.55 / 0.64 |
+| Durable fix (RSR): mitigate / remediate / free | 0.25 / 0.84 / 0.76 | 0.42 / 0.55 / 0.64 |
 | Temporary share of the conventional successes, mitigation arm | 39% | 33% |
 | AAM (free arm picks the right kind of action) | 0.84 | 0.68 |
-| Mitigate against remediate on real recovery (CMH) | OR 0.08, p < 0.0001 | OR 0.68, p = 0.27 |
-| Runs that hit the 300 s limit | 0 | 86 of 180 |
+| Mitigate against remediate on durable fixes (CMH) | OR 0.08, p < 0.0001 | OR 0.68, p = 0.27 |
+| Runs that hit the 300 s limit | 0 | 86 of 180 (79 of the 171 analysed) |
 | Peek gate (at most 5% of AI runs) | passed, 7 of 360 | passed narrowly, 9 of 180 |
-| Exploratory: real recovery with the fault removed from the code, 9 code faults (mitigate / remediate / free) | 0 / 0.89 / 0.77 | 0 / 0.61 / 0.58 |
+| Exploratory: durable fix with the defect removed from the code, 9 code faults (mitigate / remediate / free) | 0 / 0.89 / 0.77 | 0 / 0.61 / 0.58 |
 
-Auditing the fixes shows a second gap. Every real recovery of the mitigation arm on a code fault was a durable
-configuration workaround, such as `POOL_MAX=1`, a one-connection database pool that avoids the F9 deadlock, or
-`LOG_LEVEL=warn`, which slows the F11 log growth past the load window; the three rounds credit both. Five more real
-recoveries changed code without repairing the defect. With one fault left out at a time, Haiku's
+The three rounds still credit some fixes that leave the defect in place. Every durable fix of the mitigation arm on a
+code fault was a configuration workaround, such as `POOL_MAX=1`, a one-connection database pool that avoids the F9
+deadlock, or `LOG_LEVEL=warn`, which slows the F11 log growth past the load window. Some code changes also left the
+defect in place: two Haiku runs worked around it in code (F4, F11), and three F12 fixes added workers instead of
+restoring the partner timeout. With one fault left out at a time, Haiku's
 mitigate-against-remediate comparison holds, while Gemini's p ranges from 0.017 to 1.0, so its non-significant result says
 little. The two models ran under different isolation, and Gemini timed out in almost half of its runs; read
 `docs/methodology.md` before comparing them.
@@ -44,8 +46,8 @@ A follow-up (WP4') ran Sonnet 5.5 and Haiku 5.5 on the same faults under one iso
 | Remediation arm: RSR | 0.92 | 0.80 |
 
 On the four faults that both models mitigated, every run got the same verdict, so the pre-registered CMH test of the
-mitigation arm is undefined; on those faults, whether a fix was temporary depended on the fault alone. The
-remediation-arm difference is OR 5.00, p = 0.153.
+mitigation arm is undefined. The models differed in which faults they cleared (Haiku restarted F6, Sonnet fixed F12),
+and three runs per cell cannot show a model effect. The remediation-arm difference is OR 5.00, p = 0.153.
 
 WP2 applied the extra rounds to eight SREGym-Lite problems (commit `909f558`). In group A, SREGym's oracle has no
 durability step; in group B it already replays the load or reruns the work.

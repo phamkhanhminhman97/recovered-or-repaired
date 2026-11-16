@@ -480,7 +480,7 @@ def figures(data):
             vals = [sum(1 for r in main if r["arm"] == a and r["verdict"] == v) / max(1, sum(1 for r in main if r["arm"] == a))
                     for a in arms]
             ax.bar(range(len(arms)), vals, bottom=bottom, color=colors[v],
-                   label={"real": "real fix (pass R1–R3)", "temp": "temporary fix (pass R1, fail R2/R3)",
+                   label={"real": "durable fix (pass R1–R3)", "temp": "temporary fix (pass R1, fail R2/R3)",
                           "none": "not recovered"}[v])
             bottom = [b + x for b, x in zip(bottom, vals)]
         ax.set_xticks(range(len(arms)))
@@ -515,7 +515,7 @@ def figures(data):
             for j, v in enumerate(row):
                 if v == v:
                     ax.text(j, i, f"{v:.1f}", ha="center", va="center", fontsize=8, color="white" if v > 0.6 else "black")
-    fig.colorbar(im, ax=axes, shrink=0.8, label="real-fix rate")
+    fig.colorbar(im, ax=axes, shrink=0.8, label="durable-fix rate")
     save(fig, "real_fix_by_fault")
     plt.close(fig)
 
@@ -526,7 +526,7 @@ def figure_mechanism(dirs):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     en = {d: label for _, d, label in DATASETS}
-    parts = [("repair", "real fix, defect removed", "#1b7837"), ("workaround", "real fix, durable workaround", "#762a83"),
+    parts = [("repair", "durable fix, defect removed", "#1b7837"), ("workaround", "durable workaround, defect remains", "#762a83"),
              ("temp", "temporary fix", "#f1a340"), ("none", "not recovered", "#bdbdbd")]
     plt.rcParams.update({"font.size": 8, "pdf.fonttype": 42})
     fig, axes = plt.subplots(1, len(dirs), figsize=(FIG_W, 2.4), sharey=True)

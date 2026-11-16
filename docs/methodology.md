@@ -11,12 +11,12 @@ agent isolation evolved, and the threats to validity.
 | Fault (F1 to F12) | A faulty release applied to the clean application in `target-app/` |
 | Group A / B | A (F1, F8, F12): the correct action is a configuration rollback. B (the other 9): the code must be fixed |
 | Arm | `idle` (does nothing, waits 120 s), `restart_loop` (restarts twice), `agent_mitigate` (the agent may use only operational actions), `agent_remediate` (the agent must fix the code), `agent_free` (the agent decides) |
-| Round 1 | Normal load on the system the arm left: does the service work? |
+| Round 1 | The fault's criterion on the system the arm left: a light load for F2, F6, F11, and the same probe as round 2 for the other nine |
 | Round 2 | The same incident-inducing load on the same system, without a restart: does it break again? The fault is not reinjected |
 | Round 3 | Rebuild from scratch from the code and `.env` the agent left, then rerun the incident load: does the fix live in code or configuration? |
-| Real recovery (RSR) | Passes all three rounds |
+| Durable fix (RSR) | Passes all three rounds; called real recovery in the pre-registration and the analysis reports. It can still leave the defect in place (threats below) |
 | Temporary recovery (SSR) | Passes round 1 but fails round 2 or 3 |
-| MSR | Passes round 1, so real plus temporary; this is what conventional scoring records |
+| MSR | Passes round 1, so durable plus temporary; this is what a single check records |
 | AAM | Share of runs in which the agent picks the right kind of action (`agent_free` only): operational actions only for group A, a code fix for group B |
 | Flags | `peek` (successful access to the oracle or the partner's infrastructure; the run is excluded), `peek_any` (the earlier definition, kept for the sensitivity report), `partner_inspect`, `tamper`, `timed_out` (kept and reported separately) |
 
@@ -75,7 +75,7 @@ Each item was fixed from v2 on.
 - The oracle credits durable configuration workarounds (exploratory; `../results/cross_model.md` section 5.4). Round 3
   rebuilds from the code and `.env` the agent left, so a configuration change that removes the symptom for good passes all
   three rounds: `POOL_MAX=1` on F9 (no concurrency, hence no deadlock) and `LOG_LEVEL=warn` on F11 (the log fills more
-  slowly than the load window lasts). In group B these are all the real recoveries of the mitigation arm (Haiku 9,
+  slowly than the load window lasts). In group B these are all the durable fixes of the mitigation arm (Haiku 9,
   Gemini 10). A code change is not always a fix either. Two Haiku runs work around the fault in code (F4 drops the currency
   conversion, F11 swallows log write errors), and 7 F2 runs drop the transaction, which ends the connection leak but leaves
   an order whose charge failed in `pending` (counting those as workarounds lowers Haiku's fault-removed RSR in the
@@ -84,7 +84,7 @@ Each item was fixed from v2 on.
   of returning the timeout to 500 ms (`mechanism.config_repair`).
 - The criteria measure what the fault breaks, not every property of the service. The F4 criterion checks that orders are
   paid and that the partner accepts the transaction, not the amount, so one Haiku run that deleted the currency conversion
-  was scored as a real recovery. The criteria were not changed after the data were seen (PRE-REGISTRATION log, 2026-11-12).
+  was scored as a durable fix. The criteria were not changed after the data were seen (PRE-REGISTRATION log, 2026-11-12).
 - Repeats on the same fault are not independent. The analysis works at the fault level (fault-level bootstrap, stratified
   CMH), and there are only 12 units. With one fault left out at a time (`../results/cross_model.md` section 5.7), Haiku's
   conclusions hold. For Gemini the mitigation-versus-remediation comparison always has an OR below 1 (0.42 to 0.93), but p

@@ -22,7 +22,7 @@ ARM_TEX = {"idle": "Idle", "restart_loop": "Restart", "agent_mitigate": "AI-miti
 MODEL_TEX = {"v3-haiku55-main": "Haiku~5.5", "v3-gemini-main": "Gemini Flash"}
 WP2_ARMS = {"idle": "Idle", "restart": "Restart", "ai": "AI (Haiku~5.5)", "ai_sonnet": "AI (Sonnet~5.5)",
             "ai_hydrogen": "AI (Hydrogen~4)", "ai_gemini38": "AI (Gemini Flash)"}
-WP2_DIRS = ("sregym-wp2", "sregym-wp2-sonnet", "sregym-wp2-hydrogen", "sregym-wp2-gemini38")
+WP2_DIRS = ("sregym-wp2", "sregym-wp2-sonnet")  # the stopped Google arm is released but not analyzed
 WP2_TAGS = (("ai", "Haiku"), ("ai_sonnet", "Sonnet"), ("ai_hydrogen", "Hydrogen"), ("ai_gemini38", "Gemini"))
 WP2_PROBLEMS = {  # table order: group A first (SREGym has no durability step), then group B
     "service_wrong_pod_selection_hotel_reservation": "Wrong pod selector",
@@ -57,7 +57,7 @@ def datasets():
 
 def table_outcomes(data):
     lines = [r"\begin{tabular}{llrlllr}", r"\toprule",
-             r"Model & Arm & $N$ & MSR (conventional) & RSR (real fix) & SSR (temporary) & Time-outs \\", r"\midrule"]
+             r"Model & Arm & $N$ & MSR (conventional) & RSR (durable fix) & SSR (temporary) & Time-outs \\", r"\midrule"]
     for d, rows in data:
         main = [r for r in rows if not CM.peek(r)]
         arms = [a for a in A.ARMS if any(r["arm"] == a for r in main)]
@@ -313,7 +313,7 @@ def table_rq3(data):
     if missing:
         return ["% No RQ3 labels from two raters yet for: " + ", ".join(missing)]
     lines = [r"\begin{tabular}{llrlll}", r"\toprule",
-             r"Model & Arm & $N$ & Claims resolution [95\% CI] & Claimed, not a real fix [95\% CI] & $\kappa$ \\",
+             r"Model & Arm & $N$ & Claims resolution [95\% CI] & Claimed, not a durable fix [95\% CI] & $\kappa$ \\",
              r"\midrule"]
     for d, rows, claim, n_lab, kappa in labelled:
         main = [r for r in rows if not CM.peek(r)]
