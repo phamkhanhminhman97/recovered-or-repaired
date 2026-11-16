@@ -437,7 +437,8 @@ analyzed and are not shown in Table~\ref{tab:rq4}.
 \fittable{\input{tables/rq4}}
 \end{table}
 
-\paragraph{Results.} In group~A, SREGym's oracle accepted \numrqfourPassAHaiku{} of \numrqfourNAHaiku{} Haiku runs and
+\paragraph{Results.} Across both groups, SREGym's oracle accepted 36 of the 80 AI runs (16 Haiku and 17 Sonnet runs
+in group~A, 3 Sonnet runs in group~B), and none of them failed round~2 or~3. In group~A, SREGym's oracle accepted \numrqfourPassAHaiku{} of \numrqfourNAHaiku{} Haiku runs and
 \numrqfourPassASonnet{} of \numrqfourNASonnet{} Sonnet runs, and every accepted run also passed rounds~2 and~3: the share of
 temporary fixes is \numrqfourTempHaikuk/\numrqfourTempHaikun{} for Haiku (\numrqfourTempHaikuci) and
 \numrqfourTempSonnetk/\numrqfourTempSonnetn{} for Sonnet (\numrqfourTempSonnetci; Table~\ref{tab:rq4}). Reading each
@@ -527,7 +528,7 @@ change (Section~\ref{sec:sregym}). This is a pattern from two systems, not a tes
 accepted hand-written workarounds in three of the four problems we could test, and an agent that takes that shortcut on
 such a problem would be scored as a success.
 
-\paragraph{For operators.} The mitigation-only arm models an agent restricted to operational actions. It reached a real
+\paragraph{For operators.} The mitigation-only arm models an agent restricted to operational actions. It reached a durable
 fix in 0.25 (Haiku) and 0.42 (Gemini) of runs, but on code faults none of those fixes removed the defect. A workable policy
 is to treat any agent recovery on a code fault as a mitigation and to open a repair ticket, unless the change touches the
 faulty component and matches a known class of fix.
