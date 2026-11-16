@@ -144,7 +144,7 @@ HTTP (identical for all arms), and then scores three rounds. A later round runs 
 so that $\MSR = \RSR + \SSR$. We call a run that passes all three rounds a \emph{durable fix}; a durable fix need not
 remove the defect, and Section~\ref{sec:results} checks what each one changed. MSR is what a single check after the
 agent acts reports, here the fault's own criterion. A weaker check, which we call \emph{live}, asks only whether the
-application answers HTTP on \texttt{/health} after the arm acted; every run passes through it before round~1. The share $\SSR/\MSR$ is the
+application answers HTTP on \texttt{/health}, with any status code, after the arm acted; every run passes through it before round~1. The share $\SSR/\MSR$ is the
 fraction of these conventional successes that are temporary. For the free arm, the action-appropriateness match $\AAM$ is the fraction of
 runs whose action type matches the
 fault group: a configuration-only change for group~A and a code change for group~B.
@@ -221,7 +221,7 @@ its significance at 0.05. The pre-registration first named a mixed-effects logis
 CMH test before any agent run, because the analysis environment had no mixed-model library. As a sensitivity analysis
 added after the runs, we later fit that model by maximum likelihood (a random intercept per fault, integrated numerically;
 Table~\ref{tab:contrasts}). It agrees with the CMH test in direction on all six contrasts; only Gemini's
-remediation-versus-free contrast changes status ($p=\numglmmPRemFreeGemini$ against 0.077), and not after a Holm
+remediation-versus-free contrast changes status ($p=\numglmmPRemFreeGemini$ against 0.077), but not after a Holm
 correction within the model ($p=\numglmmHolmRemFreeGemini$).
 
 \paragraph{Contaminated runs.} A run is flagged \emph{peek} if the agent accessed the grader, the partner's code or port,
@@ -246,7 +246,7 @@ remediation-versus-free contrast changes status ($p=0.08$ to $p=0.04$). Time-out
 \caption{Outcomes by arm (peek runs excluded). MSR is what a single check reports; RSR passes all three rounds; SSR
 passes round~1 but fails round~2 or~3. 95\% CIs from a bootstrap over faults; [0.00, 0.00] means no run of the arm
 reached the outcome, and rates may not add up because of rounding. Live: share of runs where the application answered
-\texttt{/health} after the arm acted.}\label{tab:outcomes}
+\texttt{/health} (any status code) after the arm acted.}\label{tab:outcomes}
 \fittable{\input{tables/outcomes}}
 \end{table}
 
@@ -577,8 +577,9 @@ depending on the definition. We recommend defining contamination by successful a
 
 \section{Threats to Validity}\label{sec:threats}
 
-We group threats by the usual four categories~\citep{wohlin2012experimentation}; Table~\ref{tab:deviations} lists every
-deviation from the pre-registration and every analysis added after the data.
+We group threats by the usual four categories~\citep{wohlin2012experimentation}; Table~\ref{tab:deviations} lists the
+deviations from the pre-registration that concern the reported data sets and every analysis added after the data;
+the log also records infrastructure incidents and pilot changes.
 
 \paragraph{Construct validity.} What counts as temporary or durable depends on the oracle. Thresholds and load windows were
 fixed in advance and validated on reference fixes, but a workaround that slows a leak (F11) can outlast any finite window,
@@ -591,7 +592,7 @@ fixes we inspected the key added lines of every run (F4, F6, F9, F10, F11) or ap
 faulty construct of the release is gone (F2, F3, F5, F7; all 109 such runs passed). A restart is a temporary fix by our
 definition, yet periodic restarts are a legitimate way to live with aging-related faults~\citep{huang1995rejuvenation,
 grottke2007fighting}: the verdict says that the defect remains, not that the action was wrong. Finally, the conventional
-baseline is the fault's own criterion, which is stricter than the health probes many benchmarks use; the liveness column of
+baseline is the fault's own criterion, which is stricter than a liveness probe; the liveness column of
 Table~\ref{tab:outcomes} shows how much more a probe that only checks that the service answers would accept.
 
 \paragraph{Internal validity.} The two models ran on different infrastructure. The Gemini runs used a stricter sandbox, a
@@ -629,8 +630,8 @@ whose outcomes we had seen. It re-labelled flags only, and we report the older d
 
 \begin{table}[t]
 \centering\scriptsize
-\caption{Deviations from the pre-registration log and analyses added after the data, with their effect on the reported
-results. Each entry is dated in the log.}\label{tab:deviations}
+\caption{Deviations from the pre-registration log that concern the reported data sets, and analyses added after the
+data, with their effect on the reported results. Each entry is dated in the log.}\label{tab:deviations}
 \begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.42\linewidth}>{\raggedright\arraybackslash}p{0.40\linewidth}@{}}
 \toprule
 Date (2026) & Change & Effect on the reported results \\
@@ -638,15 +639,32 @@ Date (2026) & Change & Effect on the reported results \\
 14 Oct & CMH test replaces the registered mixed-effects logistic regression, before any agent run & The registered model,
 fit after the runs, agrees in direction on all six contrasts (Table~\ref{tab:contrasts}) \\
 16 Oct & Main model changed from Haiku~4.5 to Haiku~5.5 after 40 runs & Haiku~4.5 runs used only as auxiliary data \\
+22 Oct & Gemini stopped after 5 runs (an agent read the scoring code via \texttt{lsof}) and at 92 runs (partner code read
+through \texttt{docker exec}, 42/92); sandbox added and partner moved to the host & Set-aside batches, not analyzed
+(Section~\ref{sec:leakage}) \\
 22 Oct & First Haiku~5.5 batch failed the contamination gate (31/360) and was rerun with the partner on the host &
 Set-aside batch used only as auxiliary data \\
+23 Oct & Haiku and Gemini run on different machines; the validation gate passed 111/111 on both & A confound for the
+model comparison (internal validity) \\
+6 Nov & Stricter sandbox and a pinned, clean agent setup for Gemini, before its first run & A confound for the model
+comparison (internal validity) \\
+7 Nov & Gemini stopped at 63 runs (partner port called directly, 15/63) and rerun with the port blocked & Set-aside
+batch, not analyzed \\
 7 Nov & Contamination counted by successful access, adopted after 15 Gemini runs & Flags only; the older definition is
 reported (Section~\ref{sec:leakage}) \\
+12 Nov & Pre-registered 900\,s Gemini follow-up stopped after 6 of 180 runs (one agent mounted the home directory) &
+Runs released, not analyzed; the time limit remains a confounder \\
 13 Nov & Self-report question deferred, before any summary was labelled & Not analyzed; rating packages released \\
 14--15 Nov & SREGym question, its Sonnet arm, and the same-isolation follow-up added, before their runs & Reported as RQ3
 and in Table~\ref{tab:wp4} \\
-12 and 16 Nov & Analyses after the data: fix mechanism, leave-one-fault-out, pass$^k$, liveness, mixed-effects fit &
-Labelled exploratory \\
+15 Nov & SREGym contamination check implemented after 4 main runs (outcomes seen, no agent command read) & No run
+flagged \\
+15 Nov & SREGym's scoring time limit raised from 300 to 900\,s after 29 of 40 Sonnet runs & One run rerun; the limit only
+bounds the wait for scoring \\
+15 Nov & Google arm of the SREGym study stopped when the provider disabled the account & Runs released, not analyzed or
+tabulated \\
+12--16 Nov & Analyses after the data: fix mechanism, leave-one-fault-out, pass$^k$, success-based contamination for
+Haiku, liveness, mixed-effects fit & Labelled exploratory \\
 \bottomrule
 \end{tabular}
 \end{table}
