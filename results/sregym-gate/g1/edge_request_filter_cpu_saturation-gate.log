@@ -1,0 +1,24 @@
+2026-11-14 14:04:21,535 - all.application - INFO - Namespace astronomy-shop not found. Creating namespace.
+2026-11-14 14:04:21,597 - all.application - INFO - Namespace astronomy-shop created successfully: namespace/astronomy-shop created
+
+== Edge Request Filter Mitigation Evaluation ==
+[FAIL] Error checking edge request filter mitigation: (404)
+Reason: Not Found
+HTTP response headers: HTTPHeaderDict({'Audit-Id': 'f3671caa-1db5-4f39-9a0c-98eb2547017d', 'Cache-Control': 'no-cache, private', 'Content-Type': 'application/json', 'X-Kubernetes-Pf-Flowschema-Uid': '8b87959d-d0e9-4b82-8004-dfc7e853a6a9', 'X-Kubernetes-Pf-Prioritylevel-Uid': 'e6ce728e-bc70-41b3-818d-e806d18edef7', 'Date': 'Sat, 14 Nov 2026 07:04:21 GMT', 'Content-Length': '230'})
+HTTP response body: {"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"deployments.apps \"frontend-proxy\" not found","reason":"NotFound","details":{"name":"frontend-proxy","group":"apps","kind":"deployments"},"code":404}
+
+
+{"problem": "edge_request_filter_cpu_saturation", "step": "faulty", "success": false, "seconds": 0.0, "detail": {"reason": "kubernetes_resource_missing", "failure_class": "ambiguous", "detail": {"error": "ApiException: (404)\nReason: Not Found\nHTTP response headers: HTTPHeaderDict({'Audit-Id': 'f3671caa-1db5-4f39-9a0c-98eb2547017d', 'Cache-Control': 'no-cache, private', 'Content-Type': 'application/json', 'X-Kubernetes-Pf-Flowschema-Uid': '8b87959d-d0e9-4b82-8004-dfc7e853a6a9', 'X-Kubernetes-Pf-Prioritylevel-Uid': 'e6ce728e-bc70-41b3-818d-e806d18edef7', 'Date': 'Sat, 14 Nov 2026 07:04:21 GMT', 'Content-Length': '230'})\nHTTP response body: {\"kind\":\"Status\",\"apiVersion\":\"v1\",\"metadata\":{},\"status\":\"Failure\",\"message\":\"deployments.apps \\\"frontend-proxy\\\" not found\",\"reason\":\"NotFound\",\"details\":{\"name\":\"frontend-proxy\",\"group\":\"apps\",\"kind\":\"deployments\"},\"code\":404}\n\n", "status": 404}}}
+Traceback (most recent call last):
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 248, in <module>
+    main()
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 227, in main
+    WORKAROUNDS[pid](problem)
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 204, in <lambda>
+    "edge_request_filter_cpu_saturation": lambda p: set_env(p, p.faulty_service, p.regex_env, "^([b-z]+)*$"),
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 169, in set_env
+    sh(f"kubectl set env deployment/{deployment} -n {problem.namespace} --containers={deployment} {name}='{value}'")
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 37, in sh
+    raise RuntimeError(f"{cmd}: {r.stderr.strip()[-500:]}")
+RuntimeError: kubectl set env deployment/frontend-proxy -n astronomy-shop --containers=frontend-proxy WAF_RULE_REGEX='^([b-z]+)*$': Error from server (NotFound): deployments.apps "frontend-proxy" not found

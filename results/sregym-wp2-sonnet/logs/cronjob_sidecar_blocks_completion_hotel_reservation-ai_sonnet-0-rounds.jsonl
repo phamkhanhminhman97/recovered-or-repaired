@@ -1,0 +1,2 @@
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "round2", "success": true, "seconds": 120.2, "detail": {"jobs": ["audit-log-archiver-29912023", "audit-log-archiver-29912024"]}}
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "round3", "success": true, "seconds": 43.5, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"], "attempts": 1}}

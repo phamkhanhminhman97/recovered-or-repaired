@@ -1,0 +1,4 @@
+== Wrong Pod Selection Mitigation Evaluation ==
+Service frontend still selects non-frontend endpoint pods: ['search-9cd459687-4m9b5']
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "faulty", "success": false, "seconds": 0.0, "detail": {"reason": "wrong_pods_selected", "failure_class": "agent_error", "detail": {"service": "frontend", "pods": ["search-9cd459687-4m9b5"]}}}
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}

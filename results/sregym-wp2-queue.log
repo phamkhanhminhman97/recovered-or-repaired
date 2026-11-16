@@ -1,0 +1,26 @@
+2026-11-15T10:02:12 dot Haiku xong 85/85
+2026-11-15T10:25:00 luot thu sonnet: dat; [('pilot-sonnet-kafka_poison_pill_hol_block', 'durable'), ('pilot-sonnet-secret_rotation_stale_env_credentials_astronomy_shop', 'not_recovered'), ('pilot-sonnet-service_wrong_pod_selection_hotel_reservation', 'durable')]; hong []
+2026-11-15T15:36:08 dot Sonnet: 40/40
+2026-11-15T15:36:09 thu Hydrogen lan 1: HTTP Error 404: Not Found
+2026-11-15T15:46:09 thu Hydrogen lan 2: HTTP Error 404: Not Found
+2026-11-15T15:56:11 thu Hydrogen lan 3: HTTP Error 404: Not Found
+2026-11-15T15:56:11 model nhanh Google: gemini38 (gemini-3.8-flash)
+2026-11-15T16:28:42 luot thu gemini38: dat; [('pilot-gemini38-kafka_poison_pill_hol_block', 'durable'), ('pilot-gemini38-secret_rotation_stale_env_credentials_astronomy_shop', 'durable'), ('pilot-gemini38-service_wrong_pod_selection_hotel_reservation', 'durable')]; hong []
+Traceback (most recent call last):
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2_queue.py", line 149, in <module>
+    main()
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2_queue.py", line 133, in main
+    run(["--model", google], f"sregym-wp2-{google}")
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2_queue.py", line 48, in run
+    return subprocess.run([sys.executable, str(HERE / "run_wp2.py"), *args], cwd=R.REPO, stdout=f,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 507, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1126, in communicate
+    self.wait()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1189, in wait
+    return self._wait(timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1917, in _wait
+    (pid, sts) = self._try_wait(0)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1875, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+KeyboardInterrupt

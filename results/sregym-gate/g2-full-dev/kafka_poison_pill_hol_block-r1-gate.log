@@ -1,0 +1,44 @@
+2026-11-14 14:38:40,611 - all.application - INFO - Namespace astronomy-shop already exists.
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+❌ The Kafka data plane did not make valid progress beyond the blocked record
+{"problem": "kafka_poison_pill_hol_block", "step": "faulty", "success": false, "seconds": 278.0, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"blocked_offset": 20, "detail": null}}}
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+❌ The Kafka data plane did not make valid progress beyond the blocked record
+{"problem": "kafka_poison_pill_hol_block", "step": "restart", "success": false, "seconds": 302.1, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"blocked_offset": 20, "detail": null}}}
+2026-11-14 14:48:20,743 - all.sregym.inject_kafka - INFO - [Kafka pipeline] Recovery: stopping the validator
+2026-11-14 14:48:25,458 - all.sregym.inject_kafka - INFO - [Kafka pipeline] Consumer group advanced to offset 21
+2026-11-14 14:48:30,486 - all.sregym.inject_kafka - INFO - [Kafka pipeline] Deployment 'orders-validator' is ready
+== Fault Recovery: Kafka poison-pill HOL block ==
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+   valid source results are complete through offset 341; group offset=341
+   forward progress: 341 -> 364
+🔁 Restart-resistance probe: deleting consumer pod orders-validator-87b4cd478-tmnqq
+   post-restart progress: 364 -> 391
+✅ Kafka source/output integrity and durable consumer progress verified
+{"problem": "kafka_poison_pill_hol_block", "step": "workaround", "success": true, "seconds": 153.1, "detail": {}}
+{"problem": "kafka_poison_pill_hol_block", "step": "round2", "success": false, "seconds": 191.4, "detail": {"processed": 5, "expected": 10}}
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+   valid source results are complete through offset 515; group offset=516
+   forward progress: 515 -> 538
+🔁 Restart-resistance probe: deleting consumer pod orders-validator-84978b5f7-pmp5n
+   post-restart progress: 538 -> 567
+✅ Kafka source/output integrity and durable consumer progress verified
+{"problem": "kafka_poison_pill_hol_block", "step": "durable", "success": true, "seconds": 137.3, "detail": {}}
+{"problem": "kafka_poison_pill_hol_block", "step": "round2", "success": true, "seconds": 5.0, "detail": {"processed": 10}}
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+   valid source results are complete through offset 629; group offset=630
+   forward progress: 629 -> 651
+🔁 Restart-resistance probe: deleting consumer pod orders-validator-5485967444-86t87
+   post-restart progress: 651 -> 652
+✅ Kafka source/output integrity and durable consumer progress verified
+{"problem": "kafka_poison_pill_hol_block", "step": "round3", "success": true, "seconds": 123.9, "detail": {"recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/order-stream", "deployment.apps/orders-validator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"]}}

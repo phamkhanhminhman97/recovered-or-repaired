@@ -1,0 +1,14 @@
+# Partner on the host (SELFHEAL_PARTNER_MODE=host, since 2026-10-22): Docker holds only the forwarding port;
+# the partner's source lives in a directory the agent cannot read (sandbox-exec).
+name: acme-payments
+
+services:
+  gateway:
+    build: ./gateway
+    networks:
+      partners:
+        aliases: [partner-api]
+
+networks:
+  partners:
+    name: shop-partners

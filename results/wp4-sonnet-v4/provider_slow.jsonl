@@ -1,0 +1,1 @@
+{"problem_id": "F12", "arm": "agent_mitigate", "run_index": 2, "at": "2026-11-15T19:40:13", "provider_latency": {"n": 13, "p50_ms": 6709, "p90_ms": 10716, "status": {"200": 13}, "ttft_p50_ms": 4172, "ms_per_token_p50": 20.5, "slow": true}, "timed_out": false, "n_commands": 8}

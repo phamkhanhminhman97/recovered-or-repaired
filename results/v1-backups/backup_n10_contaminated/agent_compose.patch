@@ -1,0 +1,14 @@
+diff --git a/target-app/docker-compose.yml b/target-app/docker-compose.yml
+index 2524e79..12b9500 100644
+--- a/target-app/docker-compose.yml
++++ b/target-app/docker-compose.yml
+@@ -38,7 +38,9 @@ services:
+       FAULT_ID: ${FAULT_ID:-}
+       FAULT_FIXED: ${FAULT_FIXED:-0}
+       EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-correct-secret-v1}
++      EXTERNAL_API_KEY_EXPECTED: ${EXTERNAL_API_KEY_EXPECTED:-correct-secret-v1}
+       ITEMS_SEED_COUNT: ${ITEMS_SEED_COUNT:-20000}
++      JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-3000}
+       PORT: 3000
+     ports:
+       - "3000:3000"

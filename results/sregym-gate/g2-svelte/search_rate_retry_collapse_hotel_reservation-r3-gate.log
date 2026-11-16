@@ -1,0 +1,70 @@
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=20 queue_capacity=256
+[Health] rate=8.00/s completed=65 success=0.0% attempts/request=2.86 queue=140
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.01 queue=201
+[Health] rate=8.00/s completed=83 success=0.0% attempts/request=3.06 queue=256
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=3.02 queue=255
+[Health] rate=8.00/s completed=76 success=0.0% attempts/request=3.05 queue=255
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.05 queue=255
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=3.00 queue=255
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=3.04 queue=255
+[Health] rate=8.00/s completed=78 success=0.0% attempts/request=2.99 queue=255
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=3.02 queue=255
+[FAIL] Normal search traffic did not recover
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "faulty", "success": false, "seconds": 150.7, "detail": {"reason": "traffic_did_not_recover", "failure_class": "agent_error", "detail": {"rate": 8.0, "success_rate": 0.0, "attempts_per_request": 3.02, "queue_depth": 255.0}}}
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=20 queue_capacity=256
+[Health] rate=7.90/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Replay] Sent 40.00 requests/s for 10s, then restored the normal rate
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=3.01 queue=255
+[Health] rate=8.00/s completed=78 success=0.0% attempts/request=2.98 queue=255
+[Health] rate=8.00/s completed=84 success=0.0% attempts/request=2.99 queue=254
+[Health] rate=8.00/s completed=81 success=0.0% attempts/request=2.96 queue=254
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=2.94 queue=255
+[Health] rate=8.00/s completed=78 success=0.0% attempts/request=3.01 queue=256
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=2.99 queue=256
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.02 queue=256
+[FAIL] The application did not recover after the temporary trigger ended
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "restart", "success": false, "seconds": 149.7, "detail": {"reason": "did_not_recover_after_trigger", "failure_class": "agent_error", "detail": {"rate": 8.0, "success_rate": 0.0, "attempts_per_request": 3.02, "queue_depth": 256.0}}}
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=20 queue_capacity=256
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=3.00 queue=255
+[Health] rate=8.00/s completed=82 success=0.0% attempts/request=2.99 queue=255
+[Health] rate=8.00/s completed=82 success=0.0% attempts/request=3.00 queue=256
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.04 queue=256
+[Health] rate=8.00/s completed=82 success=0.0% attempts/request=3.06 queue=256
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=2.99 queue=254
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=2.96 queue=254
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.00 queue=254
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.04 queue=256
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=2.95 queue=255
+[FAIL] Normal search traffic did not recover
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "round2", "success": false, "seconds": 150.0, "detail": {"success": false, "reason": "traffic_did_not_recover", "failure_class": "agent_error", "detail": {"rate": 8.0, "success_rate": 0.0, "attempts_per_request": 2.95, "queue_depth": 255.0}}}
+== Fault Recovery ==
+[21:52:39] Waiting for all pods in services ['rate', 'search'] to kubectl.py:378
+           be ready...                                                          
+           All pods in services ['rate', 'search'] are ready.     kubectl.py:421
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=50 queue_capacity=256
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Replay] Sent 40.00 requests/s for 10s, then restored the normal rate
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Policy] backend_qps_limit=50 queue_capacity=256
+[PASS] Normal traffic is healthy and recovers after replaying the temporary trigger
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "reference", "success": true, "seconds": 33.2, "detail": {}}
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=50 queue_capacity=256
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Replay] Sent 40.00 requests/s for 10s, then restored the normal rate
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Policy] backend_qps_limit=50 queue_capacity=256
+[PASS] Normal traffic is healthy and recovers after replaying the temporary trigger
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "round2", "success": true, "seconds": 30.8, "detail": {"success": true}}
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=50 queue_capacity=256
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Replay] Sent 40.00 requests/s for 10s, then restored the normal rate
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Policy] backend_qps_limit=50 queue_capacity=256
+[PASS] Normal traffic is healthy and recovers after replaying the temporary trigger
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "round3", "success": true, "seconds": 54.6, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"], "attempts": 1}}

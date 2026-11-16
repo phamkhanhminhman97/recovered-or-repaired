@@ -1,0 +1,6 @@
+# The harness, oracle, and other scripts use only the standard library (Python >= 3.9).
+# Only analysis.py, cross_model.py (and tests/test_analysis.py) need the packages below; numpy 2.4 needs Python >= 3.11.
+# Versions used to produce results/*/analysis.md, results/cross_model.md, and results/figures/:
+numpy==2.4.6
+scipy==1.17.1
+matplotlib==3.10.9

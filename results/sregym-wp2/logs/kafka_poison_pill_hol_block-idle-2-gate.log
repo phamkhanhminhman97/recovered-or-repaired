@@ -1,0 +1,7 @@
+2026-11-15 07:04:10,516 - all.application - INFO - Namespace astronomy-shop already exists.
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+❌ The Kafka data plane did not make valid progress beyond the blocked record
+{"problem": "kafka_poison_pill_hol_block", "step": "faulty", "success": false, "seconds": 275.8, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"blocked_offset": 20, "detail": null}}}
+{"problem": "kafka_poison_pill_hol_block", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}

@@ -1,0 +1,4 @@
+== Namespace Memory Limit Mitigation Evaluation ==
+[FAIL] Namespace-wide memory admission requirements remain: memory-limit-quota
+{"problem": "namespace_memory_limit", "step": "faulty", "success": false, "seconds": 0.0, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"quotas": ["memory-limit-quota"]}}}
+{"problem": "namespace_memory_limit", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}

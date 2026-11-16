@@ -1,0 +1,36 @@
+14:34:20 r1 deploy service_wrong_pod_selection_hotel_reservation
+14:36:02 r1 done service_wrong_pod_selection_hotel_reservation rc=0
+14:36:03 r1 deploy kafka_poison_pill_hol_block
+14:58:31 r1 done kafka_poison_pill_hol_block rc=0
+14:58:32 r1 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+15:05:39 r1 done cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+15:05:40 r1 deploy secret_rotation_stale_env_credentials_astronomy_shop
+15:15:24 r1 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+15:15:24 r1 deploy finalizer_deadlock_controller_hotel_reservation
+15:18:57 r1 done finalizer_deadlock_controller_hotel_reservation rc=0
+15:18:57 r1 deploy internal_traffic_policy_local_astronomy_shop
+15:22:06 r1 DEPLOY_FAILED internal_traffic_policy_local_astronomy_shop
+15:22:06 r1 deploy namespace_memory_limit
+16:12:14 resume after pause (15:22 interruption of r1 internal_traffic_policy is not a deploy failure)
+16:12:14 r1 deploy internal_traffic_policy_local_astronomy_shop
+16:22:29 r1 done internal_traffic_policy_local_astronomy_shop rc=0
+16:22:30 r1 deploy namespace_memory_limit
+16:30:04 r1 done namespace_memory_limit rc=0
+16:30:04 r1 deploy search_rate_retry_collapse_hotel_reservation
+16:45:28 r1 done search_rate_retry_collapse_hotel_reservation rc=0
+16:45:28 all done
+16:45:29 r2 deploy service_wrong_pod_selection_hotel_reservation
+16:47:06 r2 done service_wrong_pod_selection_hotel_reservation rc=0
+16:47:06 r2 deploy kafka_poison_pill_hol_block
+17:08:34 r2 done kafka_poison_pill_hol_block rc=0
+17:08:35 r2 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+17:15:48 r2 done cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+17:15:48 r2 deploy secret_rotation_stale_env_credentials_astronomy_shop
+17:24:06 r2 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+17:24:06 r2 deploy finalizer_deadlock_controller_hotel_reservation
+17:27:22 r2 done finalizer_deadlock_controller_hotel_reservation rc=0
+17:27:23 r2 deploy internal_traffic_policy_local_astronomy_shop
+17:32:44 gate.py changed: round3 waits 20 s and retries up to 3 times (applies from r2 internal_traffic_policy onward; earlier runs used single-shot round3)
+17:58:30 r2 done internal_traffic_policy_local_astronomy_shop rc=0
+17:58:31 r2 deploy namespace_memory_limit
+18:04:59 STOPPED by agent: switch to --profile svelte (grafana CPU-starved, 'deployment_replicas_unready' noise in r2 internal_traffic_policy); full-profile r1/r2 kept as development evidence

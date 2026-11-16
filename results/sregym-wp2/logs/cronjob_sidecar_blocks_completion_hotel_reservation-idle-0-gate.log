@@ -1,0 +1,3 @@
+== CronJob Sidecar Mitigation Evaluation ==
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "faulty", "success": false, "seconds": 92.6, "detail": {"reason": "fresh_job_did_not_complete", "failure_class": "ambiguous", "detail": {"job": "audit-log-archiver-run-e65e09fa69f943d3", "timeout_seconds": 90}}}
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}

@@ -1,0 +1,7 @@
+== Cleanup Controller Recovery Evaluation ==
+[FAIL] ConfigMap `reservation-cleanup-token` is still stuck in deletion.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+[FAIL] Cleanup-controller recovery is incomplete.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "restart", "success": false, "seconds": 48.1, "detail": {"reason": "fault_still_present", "failure_class": "agent_error"}}
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}

@@ -1,0 +1,92 @@
+diff --git a/target-app/src/metrics.js b/target-app/src/metrics.js
+index e3c3531..2c280c5 100644
+--- a/target-app/src/metrics.js
++++ b/target-app/src/metrics.js
+@@ -21,6 +21,10 @@ function incrementDlq() {
+   state.dlqCount += 1;
+ }
+ 
++function decrementDlq() {
++  state.dlqCount = Math.max(0, state.dlqCount - 1);
++}
++
+ function percentile(sortedArr, p) {
+   if (sortedArr.length === 0) return 0;
+   const idx = Math.min(sortedArr.length - 1, Math.floor((p / 100) * sortedArr.length));
+@@ -39,4 +43,4 @@ function snapshot() {
+   };
+ }
+ 
+-module.exports = { recordRequest, incrementDlq, snapshot };
++module.exports = { recordRequest, incrementDlq, decrementDlq, snapshot };
+diff --git a/target-app/src/worker.js b/target-app/src/worker.js
+index c843c82..61b2615 100644
+--- a/target-app/src/worker.js
++++ b/target-app/src/worker.js
+@@ -1,7 +1,7 @@
+ const { Worker } = require("bullmq");
+-const { connection, dlqQueue } = require("./queue");
++const { connection, dlqQueue, jobQueue } = require("./queue");
+ const { pool } = require("./db");
+-const { recordRequest, incrementDlq } = require("./metrics");
++const { recordRequest, incrementDlq, decrementDlq } = require("./metrics");
+ const faults = require("./faults");
+ 
+ const FAULT_ID = process.env.FAULT_ID || "";
+@@ -33,13 +33,50 @@ worker.on("failed", async (job, err) => {
+   const attemptsMax = job.opts && job.opts.attempts ? job.opts.attempts : 1;
+   if (job.attemptsMade >= attemptsMax) {
+     // F4 (fault-catalog.md): rot vao DLQ sau N lan retry -- queue chinh sach, dashboard xanh.
+-    try {
+-      await dlqQueue.add("dlq-" + job.id, job.data || {});
+-      incrementDlq();
+-    } catch (e) {
+-      // khong de loi ghi DLQ lam sap worker
++    // Only move to DLQ if not already there (check if job name starts with dlq-)
++    if (!job.name || !job.name.startsWith("dlq-")) {
++      try {
++        await dlqQueue.add("dlq-" + job.id, job.data || {});
++        incrementDlq();
++      } catch (e) {
++        // khong de loi ghi DLQ lam sap worker
++      }
+     }
+   }
+ });
+ 
+-module.exports = { worker };
++// DLQ worker -- replay messages khi fault duoc fix
++async function processDlqJob(job) {
++  // Only replay if fault is fixed, otherwise just keep in DLQ
++  if (!FAULT_FIXED) {
++    throw new Error("F4: fault not fixed yet, keeping message in DLQ");
++  }
++  
++  // Replay DLQ message: add it back to main queue voi attempt count reset
++  try {
++    await jobQueue.add("job", job.data || {}, {
++      attempts: 3,
++      backoff: { type: "fixed", delay: 200 },
++    });
++  } catch (e) {
++    throw e;
++  }
++}
++
++const dlqWorker = new Worker("jobs-dlq", processDlqJob, {
++  connection,
++  concurrency: 5,
++});
++
++dlqWorker.on("completed", async (job) => {
++  if (job) {
++    // Decrement DLQ count when message successfully replayed
++    decrementDlq();
++  }
++});
++
++dlqWorker.on("failed", async (job, err) => {
++  // If replay fails (because fault is not fixed), leave in DLQ (will retry)
++});
++
++module.exports = { worker, dlqWorker };

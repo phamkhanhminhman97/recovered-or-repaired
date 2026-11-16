@@ -1,0 +1,16 @@
+== CronJob Sidecar Mitigation Evaluation ==
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "faulty", "success": false, "seconds": 92.8, "detail": {"reason": "fresh_job_did_not_complete", "failure_class": "ambiguous", "detail": {"job": "audit-log-archiver-run-9fa34d0da0024e5a", "timeout_seconds": 90}}}
+== Fault Recovery ==
+Recreated CronJob 'audit-log-archiver' with the native sidecar pattern (initContainers + restartPolicy=Always).
+Service: audit-log-archiver | Namespace: hotel-reservation
+
+== CronJob Sidecar Mitigation Evaluation ==
+  [behavior-check] Job 'audit-log-archiver-run-92e37227a8284915': archival completed
+  [behavior-check] Job 'audit-log-archiver-run-fa118ff415b84c41': forwarding verified
+✅ Fresh audit record forwarded; Job completed; no old active Jobs; application healthy
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "reference", "success": true, "seconds": 25.5, "detail": {}}
+== CronJob Sidecar Mitigation Evaluation ==
+  [behavior-check] Job 'audit-log-archiver-run-f5421352cb454202': archival completed
+  [behavior-check] Job 'audit-log-archiver-run-3d74224b53c44e03': forwarding verified
+✅ Fresh audit record forwarded; Job completed; no old active Jobs; application healthy
+{"problem": "cronjob_sidecar_blocks_completion_hotel_reservation", "step": "round3", "success": true, "seconds": 34.5, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}

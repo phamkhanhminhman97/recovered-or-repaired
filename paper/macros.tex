@@ -1,0 +1,13 @@
+% Macros shared by main.tex (article, arXiv) and main-sn.tex (Springer Nature)
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+% Journal guidelines: LLM use must be stated in the methods; shared by content.tex and the Declarations of main-sn.tex
+\newcommand{\aiusestatement}{LLM-based coding assistants were used to help write the harness and analysis code and to
+draft and edit this manuscript. The author checked every reported number against the run records and is responsible for
+the content.}
+\newcommand{\MSR}{\mathrm{MSR}}
+\newcommand{\RSR}{\mathrm{RSR}}
+\newcommand{\SSR}{\mathrm{SSR}}
+\newcommand{\AAM}{\mathrm{AAM}}
+% Tables shrink when wider than the text block (sn-jnl is narrower than article); only the size changes, never the content
+\newsavebox{\fitbox}
+\newcommand{\fittable}[1]{\sbox{\fitbox}{#1}\ifdim\wd\fitbox>\linewidth\resizebox{\linewidth}{!}{\usebox{\fitbox}}\else\usebox{\fitbox}\fi}

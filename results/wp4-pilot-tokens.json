@@ -1,0 +1,66 @@
+{
+ "sonnet": [
+  {
+   "fault": "F2",
+   "usage": {
+    "input_tokens": 415036,
+    "cached_input_tokens": 380048,
+    "cache_write_input_tokens": 34956,
+    "output_tokens": 3854,
+    "reasoning_output_tokens": 751
+   }
+  },
+  {
+   "fault": "F1",
+   "usage": {
+    "input_tokens": 80825,
+    "cached_input_tokens": 78207,
+    "cache_write_input_tokens": 2606,
+    "output_tokens": 799,
+    "reasoning_output_tokens": 0
+   }
+  },
+  {
+   "fault": "F9",
+   "usage": {
+    "input_tokens": 152623,
+    "cached_input_tokens": 142417,
+    "cache_write_input_tokens": 10190,
+    "output_tokens": 1679,
+    "reasoning_output_tokens": 355
+   }
+  }
+ ],
+ "haiku": [
+  {
+   "fault": "F2",
+   "usage": {
+    "input_tokens": 201063,
+    "cached_input_tokens": 169814,
+    "cache_write_input_tokens": 31231,
+    "output_tokens": 5906,
+    "reasoning_output_tokens": 3192
+   }
+  },
+  {
+   "fault": "F1",
+   "usage": {
+    "input_tokens": 89330,
+    "cached_input_tokens": 83534,
+    "cache_write_input_tokens": 5784,
+    "output_tokens": 1780,
+    "reasoning_output_tokens": 300
+   }
+  },
+  {
+   "fault": "F9",
+   "usage": {
+    "input_tokens": 383365,
+    "cached_input_tokens": 361751,
+    "cache_write_input_tokens": 21586,
+    "output_tokens": 7149,
+    "reasoning_output_tokens": 3669
+   }
+  }
+ ]
+}

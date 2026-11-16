@@ -1,0 +1,127 @@
+kafka_poison_pill_hol_block-restart-1 not_recovered
+service_wrong_pod_selection_hotel_reservation-idle-0 not_recovered
+namespace_memory_limit-ai-2 not_recovered
+namespace_memory_limit-restart-0 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-ai-4 durable
+namespace_memory_limit-restart-1 not_recovered
+kafka_poison_pill_hol_block-ai-3 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-idle-2 not_recovered
+service_wrong_pod_selection_hotel_reservation-ai-4 durable
+search_rate_retry_collapse_hotel_reservation-restart-1 not_recovered
+finalizer_deadlock_controller_hotel_reservation-restart-2 not_recovered
+namespace_memory_limit-ai-3 unscored
+kafka_poison_pill_hol_block-ai-0 not_recovered
+service_wrong_pod_selection_hotel_reservation-ai-0 durable
+Traceback (most recent call last):
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 300, in <module>
+    raise SystemExit(f"o dia node {node} qua 95 %, dung")
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 269, in main
+    rec["rounds"] = [{"step": x["step"], "success": x["success"]} for x in lines if x["step"] != "post"]
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 226, in run_one
+    if old := sorted(logs.glob(f"{r['run_id']}-*")):
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 131, in run
+    with open(log, "w") as f:
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 507, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1126, in communicate
+    self.wait()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1189, in wait
+    return self._wait(timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1917, in _wait
+    (pid, sts) = self._try_wait(0)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1875, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+KeyboardInterrupt
+namespace_memory_limit-ai-3 not_recovered
+service_wrong_pod_selection_hotel_reservation-idle-2 not_recovered
+service_wrong_pod_selection_hotel_reservation-idle-1 not_recovered
+internal_traffic_policy_local_astronomy_shop-ai-4 durable
+internal_traffic_policy_local_astronomy_shop-idle-2 not_recovered
+cronjob_sidecar_blocks_completion_hotel_reservation-ai-4 not_recovered
+search_rate_retry_collapse_hotel_reservation-ai-4 not_recovered
+search_rate_retry_collapse_hotel_reservation-ai-2 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-restart-2 durable
+service_wrong_pod_selection_hotel_reservation-restart-2 not_recovered
+internal_traffic_policy_local_astronomy_shop-ai-0 durable
+internal_traffic_policy_local_astronomy_shop-restart-1 not_recovered
+finalizer_deadlock_controller_hotel_reservation-idle-0 not_recovered
+namespace_memory_limit-idle-2 not_recovered
+internal_traffic_policy_local_astronomy_shop-restart-2 not_recovered
+namespace_memory_limit-restart-2 not_recovered
+search_rate_retry_collapse_hotel_reservation-ai-0 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-ai-3 durable
+kafka_poison_pill_hol_block-ai-4 not_recovered
+cronjob_sidecar_blocks_completion_hotel_reservation-idle-0 not_recovered
+finalizer_deadlock_controller_hotel_reservation-ai-1 not_recovered
+namespace_memory_limit-ai-4 not_recovered
+cronjob_sidecar_blocks_completion_hotel_reservation-ai-0 not_recovered
+internal_traffic_policy_local_astronomy_shop-ai-3 durable
+kafka_poison_pill_hol_block-restart-0 unscored
+service_wrong_pod_selection_hotel_reservation-restart-1 not_recovered
+finalizer_deadlock_controller_hotel_reservation-ai-4 not_recovered
+Traceback (most recent call last):
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 332, in <module>
+    
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 301, in main
+    r = todo[0]
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 257, in run_one
+    run(["uv", "run", "main.py", "--problem", p, "--use-external-harness"], f"{base}-deploy.log")
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/run_wp2.py", line 132, in run
+    return subprocess.run(cmd, cwd=SREGYM, stdout=f, stderr=subprocess.STDOUT, env=env).returncode
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 507, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1126, in communicate
+    self.wait()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1189, in wait
+    return self._wait(timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1917, in _wait
+    (pid, sts) = self._try_wait(0)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1875, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+KeyboardInterrupt
+kafka_poison_pill_hol_block-restart-0 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-restart-1 durable
+secret_rotation_stale_env_credentials_astronomy_shop-ai-1 durable
+cronjob_sidecar_blocks_completion_hotel_reservation-idle-1 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-idle-0 not_recovered
+search_rate_retry_collapse_hotel_reservation-restart-0 not_recovered
+kafka_poison_pill_hol_block-idle-0 not_recovered
+internal_traffic_policy_local_astronomy_shop-ai-1 durable
+service_wrong_pod_selection_hotel_reservation-ai-1 durable
+cronjob_sidecar_blocks_completion_hotel_reservation-idle-2 not_recovered
+cronjob_sidecar_blocks_completion_hotel_reservation-ai-2 not_recovered
+kafka_poison_pill_hol_block-ai-1 durable
+search_rate_retry_collapse_hotel_reservation-restart-2 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-restart-0 durable
+kafka_poison_pill_hol_block-idle-1 not_recovered
+finalizer_deadlock_controller_hotel_reservation-idle-2 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-idle-1 not_recovered
+search_rate_retry_collapse_hotel_reservation-ai-1 not_recovered
+kafka_poison_pill_hol_block-idle-2 not_recovered
+internal_traffic_policy_local_astronomy_shop-restart-0 not_recovered
+internal_traffic_policy_local_astronomy_shop-idle-0 not_recovered
+finalizer_deadlock_controller_hotel_reservation-ai-2 not_recovered
+internal_traffic_policy_local_astronomy_shop-ai-2 durable
+service_wrong_pod_selection_hotel_reservation-ai-3 durable
+finalizer_deadlock_controller_hotel_reservation-ai-0 not_recovered
+search_rate_retry_collapse_hotel_reservation-idle-0 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-ai-0 durable
+internal_traffic_policy_local_astronomy_shop-idle-1 not_recovered
+cronjob_sidecar_blocks_completion_hotel_reservation-ai-3 not_recovered
+cronjob_sidecar_blocks_completion_hotel_reservation-ai-1 not_recovered
+namespace_memory_limit-ai-0 not_recovered
+finalizer_deadlock_controller_hotel_reservation-idle-1 not_recovered
+search_rate_retry_collapse_hotel_reservation-idle-2 not_recovered
+kafka_poison_pill_hol_block-ai-2 not_recovered
+finalizer_deadlock_controller_hotel_reservation-restart-0 not_recovered
+search_rate_retry_collapse_hotel_reservation-ai-3 not_recovered
+finalizer_deadlock_controller_hotel_reservation-restart-1 not_recovered
+service_wrong_pod_selection_hotel_reservation-restart-0 not_recovered
+namespace_memory_limit-idle-0 not_recovered
+kafka_poison_pill_hol_block-restart-2 not_recovered
+namespace_memory_limit-idle-1 not_recovered
+finalizer_deadlock_controller_hotel_reservation-ai-3 not_recovered
+search_rate_retry_collapse_hotel_reservation-idle-1 not_recovered
+namespace_memory_limit-ai-1 not_recovered
+secret_rotation_stale_env_credentials_astronomy_shop-ai-2 durable
+service_wrong_pod_selection_hotel_reservation-ai-2 durable

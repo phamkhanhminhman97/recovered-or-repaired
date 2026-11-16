@@ -1,0 +1,15 @@
+== Namespace Memory Limit Mitigation Evaluation ==
+[FAIL] Namespace-wide memory admission requirements remain: memory-limit-quota
+{"problem": "namespace_memory_limit", "step": "faulty", "success": false, "seconds": 0.0, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"quotas": ["memory-limit-quota"]}}}
+2026-11-14 13:03:06,043 - all.infra.kubectl - INFO - ✅ Deleted resource quota 'memory-limit-quota' in namespace 'hotel-reservation'
+2026-11-14 13:03:06,054 - all.infra.kubectl - INFO - ✅ Scaled deployment 'search' in namespace 'hotel-reservation' to 0 replicas.
+2026-11-14 13:03:08,095 - all.infra.kubectl - INFO - ✅ Scaled deployment 'search' in namespace 'hotel-reservation' to 1 replicas.
+== Fault Recovery ==
+== Namespace Memory Limit Mitigation Evaluation ==
+SEARCH_OK
+[PASS] Namespace memory admission is safe and search is reachable
+{"problem": "namespace_memory_limit", "step": "reference", "success": true, "seconds": 8.2, "detail": {}}
+== Namespace Memory Limit Mitigation Evaluation ==
+SEARCH_OK
+[PASS] Namespace memory admission is safe and search is reachable
+{"problem": "namespace_memory_limit", "step": "round3", "success": true, "seconds": 8.3, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}

@@ -1,0 +1,10 @@
+2026-11-15 02:43:14,060 - all.application - INFO - Namespace astronomy-shop already exists.
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker']
+Uncovered nodes: ['kind-worker2', 'kind-worker3']
+Fault still active: internalTrafficPolicy=Local and 2 worker node(s) have no Ready local endpoint.
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "faulty", "success": false, "seconds": 0.2, "detail": {"internalTrafficPolicy": "Local", "uncovered_nodes": ["kind-worker2", "kind-worker3"], "reason": "fault_still_present", "failure_class": "agent_error", "detail": {"policy": "Local", "uncovered_nodes": ["kind-worker2", "kind-worker3"]}}}
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}

@@ -1,0 +1,25 @@
+2026-11-14 14:21:30,154 - all.application - INFO - Namespace astronomy-shop already exists.
+== Dependency Connectivity Evaluation ==
+Checking configured dependency address 'product-catalog:8082'
+[FAIL] Dependency connectivity check failed: Failed to dial target host "product-catalog:8082": context deadline exceeded
+== Mitigation Evaluation ==
+❌ Pod checkout-64b48f5df4-b2xbf is in phase: Pending
+Mitigation Result: Fail ❌
+{"problem": "unschedulable_incorrect_port_assignment", "step": "faulty", "success": false, "seconds": 20.2, "detail": {"oracles": [{"success": false, "reason": "fault_still_present", "failure_class": "agent_error", "detail": {"address": "product-catalog:8082", "env": "PRODUCT_CATALOG_ADDR"}, "name": "0-IncorrectPortAssignmentMitigationOracle"}, {"success": false, "name": "1-AssignNonExistentNodeMitigationOracle"}], "accuracy": 0.0, "failure_class": "agent_error", "reason": "fault_still_present"}}
+== Fault Recovery ==
+Removed nodeSelector for service checkout and redeployed.
+Removed the nonexistent-node assignment from service checkout in namespace astronomy-shop
+
+Recovered PRODUCT_CATALOG_ADDR in checkout to use port 8080.
+== Dependency Connectivity Evaluation ==
+Checking configured dependency address 'product-catalog:8080'
+[PASS] The configured dependency returned a valid product-catalog response
+== Mitigation Evaluation ==
+Mitigation Result: Pass ✅
+{"problem": "unschedulable_incorrect_port_assignment", "step": "reference", "success": true, "seconds": 12.4, "detail": {"oracles": [{"success": true, "name": "0-IncorrectPortAssignmentMitigationOracle"}, {"success": true, "name": "1-AssignNonExistentNodeMitigationOracle"}], "accuracy": 100.0}}
+== Dependency Connectivity Evaluation ==
+Checking configured dependency address 'product-catalog:8080'
+[PASS] The configured dependency returned a valid product-catalog response
+== Mitigation Evaluation ==
+Mitigation Result: Pass ✅
+{"problem": "unschedulable_incorrect_port_assignment", "step": "round3", "success": true, "seconds": 19.3, "detail": {"oracles": [{"success": true, "name": "0-IncorrectPortAssignmentMitigationOracle"}, {"success": true, "name": "1-AssignNonExistentNodeMitigationOracle"}], "accuracy": 100.0, "recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"]}}

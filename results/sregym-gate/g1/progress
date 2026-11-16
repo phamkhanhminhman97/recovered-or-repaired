@@ -1,0 +1,40 @@
+07:22:33 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+12:52:18 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+12:56:04 gate cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+12:58:41 done cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+12:58:41 deploy finalizer_deadlock_controller_hotel_reservation
+13:00:17 gate finalizer_deadlock_controller_hotel_reservation rc=0
+13:01:31 done finalizer_deadlock_controller_hotel_reservation rc=0
+13:01:31 deploy namespace_memory_limit
+13:03:01 gate namespace_memory_limit rc=0
+13:03:23 done namespace_memory_limit rc=0
+13:03:23 deploy search_rate_retry_collapse_hotel_reservation
+13:06:20 gate search_rate_retry_collapse_hotel_reservation rc=0
+13:06:29 done search_rate_retry_collapse_hotel_reservation rc=0
+13:06:29 deploy network_policy_block
+13:07:24 gate network_policy_block rc=0
+13:07:49 done network_policy_block rc=0
+13:07:49 all done
+13:10:09 deploy secret_rotation_stale_env_credentials_astronomy_shop
+13:16:51 gate secret_rotation_stale_env_credentials_astronomy_shop rc=0
+13:23:32 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+13:23:32 deploy edge_request_filter_cpu_saturation
+13:44:53 deploy edge_request_filter_cpu_saturation
+14:04:17 gate edge_request_filter_cpu_saturation rc=0
+14:04:22 done edge_request_filter_cpu_saturation rc=0
+14:04:22 deploy internal_traffic_policy_local_astronomy_shop
+14:08:39 gate internal_traffic_policy_local_astronomy_shop rc=0
+14:13:49 done internal_traffic_policy_local_astronomy_shop rc=0
+14:13:50 deploy env_variable_shadowing_astronomy_shop
+14:16:23 gate env_variable_shadowing_astronomy_shop rc=0
+14:17:07 done env_variable_shadowing_astronomy_shop rc=0
+14:17:08 deploy valkey_auth_disruption
+14:19:17 gate valkey_auth_disruption rc=0
+14:19:39 done valkey_auth_disruption rc=0
+14:19:39 deploy unschedulable_incorrect_port_assignment
+14:21:26 gate unschedulable_incorrect_port_assignment rc=0
+14:22:22 done unschedulable_incorrect_port_assignment rc=0
+14:22:22 deploy search_rate_retry_collapse_hotel_reservation
+14:25:25 gate search_rate_retry_collapse_hotel_reservation rc=0
+14:29:08 done search_rate_retry_collapse_hotel_reservation rc=0
+14:29:08 all done

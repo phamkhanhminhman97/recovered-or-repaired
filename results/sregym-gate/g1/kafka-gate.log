@@ -1,0 +1,30 @@
+2026-11-14 07:04:56,621 - all.application - INFO - Namespace astronomy-shop already exists.
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+❌ The Kafka data plane did not make valid progress beyond the blocked record
+{"problem": "kafka_poison_pill_hol_block", "step": "faulty", "success": false, "seconds": 279.5, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"blocked_offset": 20, "detail": null}}}
+2026-11-14 07:09:36,140 - all.sregym.inject_kafka - INFO - [Kafka pipeline] Recovery: stopping the validator
+2026-11-14 07:09:40,997 - all.sregym.inject_kafka - INFO - [Kafka pipeline] Consumer group advanced to offset 21
+2026-11-14 07:09:46,028 - all.sregym.inject_kafka - INFO - [Kafka pipeline] Deployment 'orders-validator' is ready
+== Fault Recovery: Kafka poison-pill HOL block ==
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+   valid source results are complete through offset 208; group offset=209
+   forward progress: 208 -> 231
+🔁 Restart-resistance probe: deleting consumer pod orders-validator-6d49bfb98d-tqb95
+   post-restart progress: 231 -> 258
+✅ Kafka source/output integrity and durable consumer progress verified
+{"problem": "kafka_poison_pill_hol_block", "step": "workaround", "success": true, "seconds": 151.3, "detail": {}}
+{"problem": "kafka_poison_pill_hol_block", "step": "round2", "success": false, "seconds": 182.7, "detail": {"processed": 5, "expected": 10}}
+== Data-Plane Progress Oracle ==
+⏳ Settling 30s before evaluation...
+   Comparing source records, processed results, and the consumer-group offset...
+   valid source results are complete through offset 377; group offset=377
+   forward progress: 377 -> 400
+🔁 Restart-resistance probe: deleting consumer pod orders-validator-8466fd7d9b-mgfcw
+   post-restart progress: 400 -> 428
+✅ Kafka source/output integrity and durable consumer progress verified
+{"problem": "kafka_poison_pill_hol_block", "step": "durable", "success": true, "seconds": 133.9, "detail": {}}
+{"problem": "kafka_poison_pill_hol_block", "step": "round2", "success": true, "seconds": 1.7, "detail": {"processed": 10}}

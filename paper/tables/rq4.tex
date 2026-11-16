@@ -1,0 +1,42 @@
+\begin{tabular}{llrrrrr}
+\toprule
+Problem & Arm & $N$ & Not recovered & Temporary & Durable & Unscored \\
+\midrule
+\multicolumn{7}{l}{\emph{Group A: no durability step in SREGym's oracle}} \\
+Wrong pod selector & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 0 & 0 & 5 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 0 & 0 & 5 & 0 \\
+Kafka poison pill & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 4 & 0 & 1 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 0 & 0 & 5 & 0 \\
+Rotated DB secret & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 0 & 0 & 3 & 0 \\
+ & AI (Haiku~5.5) & 5 & 0 & 0 & 5 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 1 & 0 & 4 & 0 \\
+ & AI (Gemini Flash) & 1 & 0 & 0 & 0 & 1 \\
+Local traffic policy & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 0 & 0 & 5 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 2 & 0 & 3 & 0 \\
+\midrule
+\multicolumn{7}{l}{\emph{Group B: SREGym's oracle replays load or reruns work}} \\
+CronJob sidecar & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 5 & 0 & 0 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 3 & 0 & 2 & 0 \\
+Finalizer deadlock & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 5 & 0 & 0 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 4 & 0 & 1 & 0 \\
+Namespace memory limit & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 5 & 0 & 0 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 5 & 0 & 0 & 0 \\
+ & AI (Gemini Flash) & 1 & 0 & 0 & 1 & 0 \\
+Retry collapse & Idle & 3 & 3 & 0 & 0 & 0 \\
+ & Restart & 3 & 3 & 0 & 0 & 0 \\
+ & AI (Haiku~5.5) & 5 & 5 & 0 & 0 & 0 \\
+ & AI (Sonnet~5.5) & 5 & 5 & 0 & 0 & 0 \\
+\bottomrule
+\end{tabular}

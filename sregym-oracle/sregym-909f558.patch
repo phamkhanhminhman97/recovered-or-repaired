@@ -1,0 +1,52 @@
+diff --git a/agents.yaml b/agents.yaml
+index fff7e02..d66d33f 100644
+--- a/agents.yaml
++++ b/agents.yaml
+@@ -16,7 +16,7 @@ agents:
+     kickoff_workdir: .
+     kickoff_env: null
+     install_script: install-codex.sh
+-    agent_version: null
++    agent_version: 0.163.0-alpha.11.1
+   - name: claudecode
+     kickoff_command: python -m clients.claudecode.driver
+     kickoff_workdir: .
+diff --git a/main.py b/main.py
+index d16cf51..c986af9 100644
+--- a/main.py
++++ b/main.py
+@@ -50,7 +50,9 @@ logger = logging.getLogger(__name__)
+ _driver_results: list[dict] = []
+ _driver_base_dir: Path | None = None
+ _driver_error: BaseException | None = None
+-EVALUATION_DRAIN_TIMEOUT_SECONDS = 300
++# selfheal WP2 (2026-11-15): 300 -> 900. Vong 2, 3 chay trong buoc cham sau bo cham cua SREGym; o bai Kafka ca hai cong lai vuot
++# 300 s va lam luot da dat vong 1 thanh "incomplete". Chi doi thoi gian cho buoc cham, khong doi ket qua cham.
++EVALUATION_DRAIN_TIMEOUT_SECONDS = 900
+ # Seconds the agent process gets to exit and flush its logs before it is
+ # reaped. Used by both the normal completion path and the timeout path.
+ AGENT_REAP_GRACE_SECONDS = 60
+diff --git a/sregym/conductor/conductor.py b/sregym/conductor/conductor.py
+index afe0320..d2b45b1 100644
+--- a/sregym/conductor/conductor.py
++++ b/sregym/conductor/conductor.py
+@@ -394,6 +394,19 @@ class Conductor:
+             self.logger.exception("Mitigation oracle raised; recording as failure to avoid a stuck stage.")
+             # Keep the existing top-level error field for result consumers.
+             r = {**Oracle.fail_from_exception(e), "error": f"{type(e).__name__}: {e}"}
++        # thesis-selfheal-agent WP2: rounds 2 and 3 on the state the agent left, before teardown (opt-in via env)
++        gate = __import__("os").environ.get("SELFHEAL_GATE")
++        if gate and r.get("success"):
++            import subprocess
++            import sys
++
++            try:
++                proc = subprocess.run([sys.executable, gate, self.problem_id, "post"],
++                                      capture_output=True, text=True, timeout=1800)
++                r["selfheal_rounds"] = [json.loads(x) for x in proc.stdout.splitlines() if x.startswith("{")]
++                r["selfheal_rounds_rc"] = proc.returncode
++            except subprocess.TimeoutExpired:
++                r["selfheal_rounds_rc"] = "timeout"
+         self.logger.info(
+             f"[EVAL] Mitigation {'Succeed' if r.get('success') else 'Failed'}\n "
+             f"TTM: {time.time() - self.execution_start_time}"

@@ -1,0 +1,61 @@
+% Springer Nature submission version (sn-jnl template). Content is shared with main.tex.
+% The sn-jnl.cls class and sn-mathphys-ay.bst come from the official Springer Nature template (LPPL):
+% https://resource-cms.springernature.com/springer-cms/rest/v1/content/18782940/data/v12  (downloaded 2026-11-12)
+\documentclass[pdflatex,sn-mathphys-ay]{sn-jnl}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\input{macros}
+\input{tables/numbers}
+% sn-jnl wraps every table in threeparttable, which breaks \fittable (a box around the tabular to fit the text width). The
+% paper's tables have no table notes, so the class's saved original table environment is restored.
+\let\table\tableorg
+\let\endtable\endtableorg
+\raggedbottom
+% PDF bookmarks down to level 3, as in the article class; a \paragraph (level 4) right under a \section makes hyperref
+% warn about a bookmark level jump.
+\hypersetup{bookmarksdepth=3}
+
+\begin{document}
+
+\title[Recovered or Repaired?]{Recovered or Repaired? A Three-Round External Oracle for LLM Agents on Backend Incident
+Remediation}
+
+\author*[1]{\fnm{Khanh Minh Man} \sur{Pham}}\email{phamkhanhminhman97@gmail.com}
+\affil*[1]{\orgname{The University of Danang -- University of Science and Technology}, \orgaddress{\city{Da Nang},
+\country{Vietnam}}}
+
+\abstract{\input{abstract}}
+
+% sn-jnl checks for an empty argument with \ifx#1\empty: the first keyword must not start with two identical characters (e.g. "LLM").
+\keywords{Incident remediation, LLM agents, site reliability engineering, evaluation oracle, AIOps, benchmark validity}
+
+\maketitle
+
+\input{content}
+
+\backmatter
+
+\section*{Statements and Declarations}
+
+\begin{itemize}
+\item \textbf{Funding.} This research received no specific funding.
+\item \textbf{Competing interests.} The author declares no competing interests.
+\item \textbf{Ethics approval and consent to participate.} Not applicable: the study involves no human or animal subjects.
+\item \textbf{Data availability.} The harness, oracle, validation scenarios, pre-registration log, and all run records
+(results, evidence, and agent transcripts for the Gemini runs) will be released with the paper; data and documentation
+under CC BY 4.0. \todo{Repository URL and DOI.}
+\item \textbf{Code availability.} The harness, oracle, analysis scripts, and the scripts that generate every table and
+figure from the run records are part of the same release, under the MIT License.
+\item \textbf{Author contribution.} The sole author designed the study, built the harness and oracle, ran the experiments,
+analyzed the data, and wrote the manuscript.
+\item \textbf{Use of generative AI.} \aiusestatement
+\end{itemize}
+
+% The @settings entry in refs.bib sets options for sn-mathphys-ay.bst and is not printed; it is written straight to .aux (not via \nocite)
+% so that natbib does not report an "undefined citation" for it.
+\immediate\write\csname @auxout\endcsname{\string\citation{snsettings}}
+\bibliography{refs}
+
+\end{document}

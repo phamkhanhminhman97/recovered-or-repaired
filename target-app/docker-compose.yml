@@ -1,0 +1,62 @@
+name: shop
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/app
+      REDIS_URL: redis://redis:6379
+      PARTNER_API_URL: http://partner-api:8080
+      LOG_DIR: /app/logs
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    mem_limit: 256m
+    volumes:
+      - ./src:/app/src
+      - ./db:/app/db
+      - applogs:/app/logs
+    networks:
+      - default
+      - partners
+
+networks:
+  partners:
+    external: true
+    name: shop-partners
+
+volumes:
+  applogs:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=256k"

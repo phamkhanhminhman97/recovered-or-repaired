@@ -1,0 +1,47 @@
+[11/14/26 23:21:40] INFO     all.sregym.profile - Deployment profile: svelte    
+[11/14/26 23:21:40] INFO     __main__ - 🔧 Config — agent: codex, agent_model:  
+                             claude-haiku-5-5, judge_backend: api, judge_model: 
+                             claude-haiku-5-5, reasoning_effort: agent default, 
+                             jev_model: disabled, deployment_profile: svelte,   
+                             internet_access: filtered, container_hardening: on,
+                             agent_api_base: set, judge_api_base: set           
+[11/14/26 23:21:56] INFO     all.sregym.container_runner - Prepared agent CLI   
+                             before enabling evaluation network restrictions    
+[11/14/26 23:21:58] INFO     all.sregym.docker_egress - Agent egress permits    
+                             only: host.docker.internal:8000,                   
+                             host.docker.internal:9954,                         
+                             host.docker.internal:10100,                        
+                             host.docker.internal:16443                         
+Reading additional input from stdin...
+OpenAI Codex v0.167.0
+--------
+workdir: /logs
+model: claude-haiku-5-5
+provider: sregym_custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: none
+reasoning summaries: none
+session id: 01a1dadd-9b95-7011-9149-917ffe4ba122
+--------
+user
+say ok
+warning: Model metadata for `claude-haiku-5-5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+ERROR: Reconnecting... 1/5
+ERROR: Reconnecting... 2/5
+ERROR: Reconnecting... 3/5
+ERROR: Reconnecting... 4/5
+ERROR: Reconnecting... 5/5
+ERROR: unexpected status 403 Forbidden: cross-origin data-plane request blocked, url: http://host.docker.internal:10100/v1/responses
+ERROR: unexpected status 403 Forbidden: cross-origin data-plane request blocked, url: http://host.docker.internal:10100/v1/responses
+Traceback (most recent call last):
+  File "/Users/user/srv/SREGym/main.py", line 1423, in <module>
+    main(args)
+  File "/Users/user/srv/SREGym/main.py", line 994, in main
+    return _run_benchmark(args, judge_backend=backend, agent_image=agent_image)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/user/srv/SREGym/main.py", line 1090, in _run_benchmark
+    run_preflight_check(
+  File "/Users/user/srv/SREGym/main.py", line 147, in run_preflight_check
+    raise RuntimeError(f"Pre-flight check failed for '{agent_name}'")
+RuntimeError: Pre-flight check failed for 'codex'

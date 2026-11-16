@@ -1,0 +1,13 @@
+{
+  "validation": {
+    "state": "passed",
+    "detail": "111/111 dung du kien",
+    "at": "2026-10-14T12:36:50"
+  },
+  "current": "pilot",
+  "pilot": {
+    "state": "running",
+    "detail": "lan 1",
+    "at": "2026-10-14T12:36:50"
+  }
+}

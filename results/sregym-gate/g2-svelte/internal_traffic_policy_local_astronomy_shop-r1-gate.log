@@ -1,0 +1,86 @@
+2026-11-14 18:53:15,972 - all.application - INFO - Namespace astronomy-shop already exists.
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker']
+Uncovered nodes: ['kind-worker2', 'kind-worker3']
+Fault still active: internalTrafficPolicy=Local and 2 worker node(s) have no Ready local endpoint.
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "faulty", "success": false, "seconds": 0.2, "detail": {"internalTrafficPolicy": "Local", "uncovered_nodes": ["kind-worker2", "kind-worker3"], "reason": "fault_still_present", "failure_class": "agent_error", "detail": {"policy": "Local", "uncovered_nodes": ["kind-worker2", "kind-worker3"]}}}
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker']
+Uncovered nodes: ['kind-worker2', 'kind-worker3']
+Fault still active: internalTrafficPolicy=Local and 2 worker node(s) have no Ready local endpoint.
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "restart", "success": false, "seconds": 37.7, "detail": {"internalTrafficPolicy": "Local", "uncovered_nodes": ["kind-worker2", "kind-worker3"], "reason": "fault_still_present", "failure_class": "agent_error", "detail": {"policy": "Local", "uncovered_nodes": ["kind-worker2", "kind-worker3"]}}}
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Uncovered nodes: []
+Running connectivity probe from node: kind-worker3
+PROBE_OK
+Probe result: PASS
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "workaround", "success": true, "seconds": 41.1, "detail": {"internalTrafficPolicy": "Local", "probe_node": "kind-worker3", "probe_ok": true}}
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Uncovered nodes: []
+Running connectivity probe from node: kind-worker3
+PROBE_OK
+Probe result: PASS
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "round3", "success": true, "seconds": 47.8, "detail": {"internalTrafficPolicy": "Local", "probe_node": "kind-worker3", "probe_ok": true, "recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"], "attempts": 1}}
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Uncovered nodes: []
+Running connectivity probe from node: kind-worker3
+PROBE_OK
+Probe result: PASS
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "round3", "success": true, "seconds": 49.3, "detail": {"internalTrafficPolicy": "Local", "probe_node": "kind-worker3", "probe_ok": true, "recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"], "attempts": 1}}
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Local
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Uncovered nodes: []
+Running connectivity probe from node: kind-worker3
+PROBE_OK
+Probe result: PASS
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "round3", "success": true, "seconds": 49.4, "detail": {"internalTrafficPolicy": "Local", "probe_node": "kind-worker3", "probe_ok": true, "recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"], "attempts": 1}}
+== Fault Recovery ==
+Restored service/recommendation: internalTrafficPolicy=Cluster
+Cleared nodeSelector on deployment/recommendation
+Cleared nodeSelector on deployment/frontend
+[18:57:01] Waiting for all pods in namespace 'astronomy-shop' to  kubectl.py:378
+           be ready...                                                          
+[18:57:07] All pods in namespace 'astronomy-shop' are ready.      kubectl.py:421
+Service: recommendation | Namespace: astronomy-shop
+
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Cluster
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Uncovered nodes: []
+Running connectivity probe from node: kind-worker3
+PROBE_OK
+Probe result: PASS
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "reference", "success": true, "seconds": 42.6, "detail": {"internalTrafficPolicy": "Cluster", "probe_node": "kind-worker3", "probe_ok": true}}
+== InternalTrafficPolicy Mitigation Evaluation ==
+== Mitigation Evaluation ==
+service/recommendation internalTrafficPolicy=Cluster
+Worker nodes: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Nodes with Ready service endpoint: ['kind-worker', 'kind-worker2', 'kind-worker3']
+Uncovered nodes: []
+Running connectivity probe from node: kind-worker3
+PROBE_OK
+Probe result: PASS
+{"problem": "internal_traffic_policy_local_astronomy_shop", "step": "round3", "success": true, "seconds": 51.2, "detail": {"internalTrafficPolicy": "Cluster", "probe_node": "kind-worker3", "probe_ok": true, "recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"], "attempts": 1}}

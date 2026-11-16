@@ -1,0 +1,25 @@
+== Wrong Pod Selection Mitigation Evaluation ==
+Service frontend still selects non-frontend endpoint pods: ['search-9cd459687-6wn5s']
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "faulty", "success": false, "seconds": 0.1, "detail": {"reason": "wrong_pods_selected", "failure_class": "agent_error", "detail": {"service": "frontend", "pods": ["search-9cd459687-6wn5s"]}}}
+== Wrong Pod Selection Mitigation Evaluation ==
+Service frontend still selects non-frontend endpoint pods: ['search-67b5744468-nmd6v']
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "restart", "success": false, "seconds": 3.1, "detail": {"reason": "wrong_pods_selected", "failure_class": "agent_error", "detail": {"service": "frontend", "pods": ["search-67b5744468-nmd6v"]}}}
+== Wrong Pod Selection Mitigation Evaluation ==
+SERVICE_OK
+Service frontend selects only frontend endpoints and accepts traffic on port 5000.
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "workaround", "success": true, "seconds": 14.2, "detail": {}}
+== Wrong Pod Selection Mitigation Evaluation ==
+Service frontend still selects non-frontend endpoint pods: ['search-7c5768bfbb-b7jdl']
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "round3", "success": false, "seconds": 2.9, "detail": {"reason": "wrong_pods_selected", "failure_class": "agent_error", "detail": {"service": "frontend", "pods": ["search-7c5768bfbb-b7jdl"]}, "recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}
+== Fault Recovery ==
+Recovered from wrong pod selection fault for service: frontend
+Recovered frontend Service endpoint selection in namespace: hotel-reservation
+
+== Wrong Pod Selection Mitigation Evaluation ==
+SERVICE_OK
+Service frontend selects only frontend endpoints and accepts traffic on port 5000.
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "reference", "success": true, "seconds": 5.5, "detail": {}}
+== Wrong Pod Selection Mitigation Evaluation ==
+SERVICE_OK
+Service frontend selects only frontend endpoints and accepts traffic on port 5000.
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "round3", "success": true, "seconds": 7.4, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}

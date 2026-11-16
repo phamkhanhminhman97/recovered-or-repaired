@@ -1,0 +1,1 @@
+{"problem_id": "F10", "arm": "agent_free", "run_index": 3, "at": "2026-10-22T14:34:17", "provider_latency": {"n": 39, "p50_ms": 3586, "p90_ms": 21085, "status": {"200": 39}, "ttft_p50_ms": 3454, "ms_per_token_p50": 92.3, "slow": true}, "timed_out": true, "n_commands": 39}

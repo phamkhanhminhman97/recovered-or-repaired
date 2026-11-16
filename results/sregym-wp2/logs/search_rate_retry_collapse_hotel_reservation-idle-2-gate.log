@@ -1,0 +1,26 @@
+== Search Retry Mitigation Evaluation ==
+[Policy] backend_qps_limit=20 queue_capacity=256
+[Health] rate=8.00/s completed=80 success=100.0% attempts/request=1.00 queue=0
+[Replay] Sent 40.00 requests/s for 10s, then restored the normal rate
+[Health] rate=8.00/s completed=85 success=0.0% attempts/request=3.05 queue=254
+[Health] rate=8.00/s completed=78 success=0.0% attempts/request=3.01 queue=255
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=3.00 queue=255
+[Health] rate=8.00/s completed=77 success=0.0% attempts/request=2.96 queue=256
+[Health] rate=8.00/s completed=81 success=0.0% attempts/request=2.99 queue=256
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=2.94 queue=254
+[Health] rate=8.00/s completed=79 success=0.0% attempts/request=2.99 queue=255
+[Health] rate=8.00/s completed=80 success=0.0% attempts/request=2.99 queue=254
+[FAIL] The application did not recover after the temporary trigger ended
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "faulty", "success": false, "seconds": 140.7, "detail": {"reason": "did_not_recover_after_trigger", "failure_class": "agent_error", "detail": {"rate": 8.0, "success_rate": 0.0, "attempts_per_request": 2.99, "queue_depth": 254.0}}}
+{"problem": "search_rate_retry_collapse_hotel_reservation", "step": "post", "success": null, "seconds": 0.0, "detail": {"skipped": "round1_failed"}}
+Exception in thread hotel-search-scheduler:
+Traceback (most recent call last):
+  File "/Users/user/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/user/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/user/srv/SREGym/sregym/generators/workload/hotel_search.py", line 212, in _schedule
+    executor.submit(self._request)
+  File "/Users/user/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 171, in submit
+    raise RuntimeError('cannot schedule new futures after shutdown')
+RuntimeError: cannot schedule new futures after shutdown

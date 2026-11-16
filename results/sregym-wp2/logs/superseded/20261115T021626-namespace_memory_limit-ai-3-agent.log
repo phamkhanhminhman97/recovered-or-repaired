@@ -1,0 +1,245 @@
+[11/15/26 01:28:43] INFO     all.sregym.profile - Deployment profile: svelte    
+[11/15/26 01:28:43] INFO     __main__ - 🔧 Config — agent: codex, agent_model:  
+                             claude-haiku-5-5, judge_backend: api, judge_model: 
+                             claude-haiku-5-5, reasoning_effort: agent default, 
+                             jev_model: disabled, deployment_profile: svelte,   
+                             internet_access: filtered, container_hardening: on,
+                             agent_api_base: set, judge_api_base: set           
+[11/15/26 01:28:58] INFO     all.sregym.container_runner - Prepared agent CLI   
+                             before enabling evaluation network restrictions    
+[11/15/26 01:28:59] INFO     all.sregym.docker_egress - Agent egress permits    
+                             only: host.docker.internal:8000,                   
+                             host.docker.internal:9954,                         
+                             host.docker.internal:10101,                        
+                             host.docker.internal:16443                         
+╭───────────────────────────── SREGym API Server ──────────────────────────────╮
+│  ____  ____  _____ ____                                                      │
+│ / ___||  _ \| ____/ ___|_   _ _ __ ___                                       │
+│ \___ \| |_) |  _|| |  _| | | | '_ ` _ \                                      │
+│  ___) |  _ <| |__| |_| | |_| | | | | | |                                     │
+│ |____/|_| \_\_____\____|\__, |_| |_| |_|                                     │
+│                         |___/                                                │
+│                                                                              │
+╰──────────────────────────── http://0.0.0.0:8000 ─────────────────────────────╯
+Available Endpoints                                                             
+
+ • POST /submit: { "stage": "diagnosis", "solution": "<your-solution>" } →      
+   grades the named stage                                                       
+ • GET /status: returns { "stage": "setup" | "diagnosis" | "mitigation" |       
+   "tearing_down" | "done" }                                                    
+/Users/user/srv/SREGym/.venv/lib/python3.12/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+  warnings.warn(  # deprecated in 14.0 - 2024-11-09
+/Users/user/srv/SREGym/.venv/lib/python3.12/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+  from websockets.server import WebSocketServerProtocol
+[11/15/26 01:29:02] INFO     uvicorn.error - Started server process [76124]     
+                    INFO     uvicorn.error - Waiting for application startup.   
+                    INFO     uvicorn.error - Application startup complete.      
+                    INFO     uvicorn.error - Uvicorn running on                 
+                             http://0.0.0.0:8000 (Press CTRL+C to quit)         
+[01:29:03] Starting agent now: codex                                 main.py:374
+           🔒 Starting Kubernetes API proxy to hide chaos            main.py:378
+           namespaces...                                                        
+[11/15/26 01:29:03] INFO     all.sregym.conductor - Starting Kubernetes API     
+                             filtering proxy...                                 
+                    INFO     all.infra.cluster_egress - Created cluster outbound
+                             policy adminnetworkpolicy.external-egress-boundary 
+                    INFO     all.infra.cluster_egress - Cluster outbound policy 
+                             permits only: 10.96.0.0/16, 10.244.0.0/16,         
+                             172.19.0.2/31, 172.19.0.4/31                       
+                    INFO     all.infra.k8s_proxy - Kubernetes API filtering     
+                             proxy started on 0.0.0.0:16443                     
+                    INFO     all.infra.k8s_proxy - Hidden namespaces:           
+                             {'chaos-mesh', 'khaos'}                            
+                    INFO     all.infra.k8s_proxy - Hidden labels: {'app':       
+                             {'locust-fetcher', 'load-generator'}, 'job':       
+                             {'workload'}, 'network-access': {'restricted'},    
+                             'opentelemetry.io/name': {'load-generator'}}       
+                    INFO     all.infra.k8s_proxy - Generated agent kubeconfig at
+                             /var/folders/4k/yzrbplrs7jq9509l4q7cr46c0000gn/T/sr
+                             egym-agent-kubeconfig-8q157m0h.yaml                
+                    INFO     all.sregym.conductor - Agent kubeconfig generated  
+                             at:                                                
+                             /var/folders/4k/yzrbplrs7jq9509l4q7cr46c0000gn/T/sr
+                             egym-agent-kubeconfig-8q157m0h.yaml                
+           🎯 Running single problem: namespace_memory_limit         main.py:417
+                                                                     main.py:498
+           🔍 Starting problem: namespace_memory_limit (Attempt 1 of            
+           1)                                                                   
+                    INFO     all.sregym.conductor - [Session Start] Problem ID: 
+                             namespace_memory_limit                             
+                    INFO     all.sregym.conductor - [STAGE] Start testing on    
+                             problem: namespace_memory_limit                    
+                    INFO     all.sregym.conductor - Stages requested for this   
+                             run: ['mitigation']                                
+                    INFO     all.sregym.conductor - Fixing Kubernetes... to     
+                             normal state.                                      
+                    INFO     all.sregym.conductor - [FIX] Imbalance leftover if 
+                             any                                                
+                    INFO     all.sregym.conductor - [FIX] KubeletCrash leftover 
+                             if any                                             
+Starting kubelet in kind-worker...
+Kubelet started in kind-worker
+Starting kubelet in kind-worker2...
+Kubelet started in kind-worker2
+Starting kubelet in kind-worker3...
+Kubelet started in kind-worker3
+Waiting for nodes ['kind-worker', 'kind-worker2', 'kind-worker3'] to become Ready...
+All requested nodes are Ready.
+                    INFO     all.sregym.conductor - [FIX]                       
+                             KubeletEvictionThresholdMisconfig leftover if any  
+Recovering disk pressure in kind-worker...
+Waiting for nodes ['kind-worker'] to become Ready...
+All requested nodes are Ready.
+Recovering disk pressure in kind-worker2...
+Waiting for nodes ['kind-worker2'] to become Ready...
+All requested nodes are Ready.
+Recovering disk pressure in kind-worker3...
+Waiting for nodes ['kind-worker3'] to become Ready...
+All requested nodes are Ready.
+[11/15/26 01:29:04] INFO     all.sregym.conductor - [FIX] Calico                
+                             IPPool/strictAffinity leftover if any              
+                    INFO     all.sregym.conductor - [FIX] Calico route-reflector
+                             label drift leftovers if any                       
+                    INFO     all.sregym.conductor - [FIX] Stale CoreDNS NXDOMAIN
+                             templates if any                                   
+No NXDOMAIN templates found in CoreDNS config; nothing to do
+                    INFO     all.sregym.conductor - [FIX] NightlyRebalanceOOM   
+                             kube-system actor leftover if any                  
+[11/15/26 01:29:05] INFO     all.sregym.conductor - [FIX] Clock drift leftover  
+                             if any                                             
+No leftover node-probe pods found; nothing to do
+                    INFO     all.sregym.conductor - Fix Kubernetes completed.   
+                    INFO     all.sregym.conductor - Undeploying app leftovers...
+[01:29:05] Waiting for namespace deletion...                      kubectl.py:540
+[11/15/26 01:32:05] WARNING  all.infra.kubectl - Namespace 'hotel-reservation'  
+                             did not terminate gracefully ([red]Timeout:        
+                             Namespace 'hotel-reservation' was not deleted      
+                             within 180 seconds.); force-deleted 0 pod(s)       
+[01:32:05] Waiting for namespace deletion...                      kubectl.py:540
+[01:34:05] ❌ start_problem failed for 'namespace_memory_limit'      main.py:537
+           (deploy attempt 1/3): Timeout: Namespace                             
+           'hotel-reservation' was not deleted within 120 seconds.              
+           🧹 Cleaning up before retry...                            main.py:551
+[11/15/26 01:34:05] INFO     all.sregym.conductor - [STAGE] Done, starting      
+                             teardown                                           
+                    INFO     all.sregym.conductor - [CLEANUP] Starting cleanup  
+                             (fault recovery, undeploy, reconcile)              
+                    INFO     all.sregym.conductor - [CLEANUP] Recovering        
+                             fault...                                           
+== Fault Recovery ==
+[recover_fault] Warning: encountered error: ApiException()
+                    INFO     all.sregym.conductor - [CLEANUP] Fault recovered   
+                    INFO     all.sregym.conductor - [CLEANUP] Undeploying app...
+           Waiting for namespace deletion...                      kubectl.py:540
+[11/15/26 01:37:05] WARNING  all.infra.kubectl - Namespace 'hotel-reservation'  
+                             did not terminate gracefully ([red]Timeout:        
+                             Namespace 'hotel-reservation' was not deleted      
+                             within 180 seconds.); force-deleted 0 pod(s)       
+[01:37:05] Waiting for namespace deletion...                      kubectl.py:540
+[11/15/26 01:39:05] ERROR    all.sregym.conductor - [CLEANUP] App cleanup failed
+                             ╭─────── Traceback (most recent call last) ───────╮
+                             │ /Users/user/srv/SREGym/sregym/service/kubectl.py │
+                             │ :858 in delete_namespace                        │
+                             │                                                 │
+                             │    855 │   │   │   │   return                   │
+                             │    856 │   │                                    │
+                             │    857 │   │   try:                             │
+                             │ ❱  858 │   │   │   self.wait_for_namespace_dele │
+                             │        max_wait=NAMESPACE_GRACEFUL_DELETE_TIMEO │
+                             │    859 │   │   except Exception as exc:         │
+                             │    860 │   │   │   forced = self.force_delete_n │
+                             │    861 │   │   │   logger.warning(              │
+                             │                                                 │
+                             │ /Users/user/srv/SREGym/sregym/service/kubectl.py │
+                             │ :562 in wait_for_namespace_deletion             │
+                             │                                                 │
+                             │    559 │   │   │   │   if remaining > 0:        │
+                             │    560 │   │   │   │   │   time.sleep(min(sleep │
+                             │    561 │   │                                    │
+                             │ ❱  562 │   │   raise Exception(f"[red]Timeout:  │
+                             │        {max_wait} seconds.")                    │
+                             │    563 │                                        │
+                             │    564 │   def is_ready(self, pod):             │
+                             │    565 │   │   phase = pod.status.phase or ""   │
+                             ╰─────────────────────────────────────────────────╯
+                             Exception: [red]Timeout: Namespace                 
+                             'hotel-reservation' was not deleted within 180     
+                             seconds.                                           
+                                                                                
+                             During handling of the above exception, another    
+                             exception occurred:                                
+                                                                                
+                             ╭─────── Traceback (most recent call last) ───────╮
+                             │ /Users/user/srv/SREGym/sregym/conductor/conducto │
+                             │ r.py:596 in _cleanup_sync                       │
+                             │                                                 │
+                             │    593 │   │   self.logger.info("[CLEANUP] Unde │
+                             │    594 │   │   if problem:                      │
+                             │    595 │   │   │   try:                         │
+                             │ ❱  596 │   │   │   │   problem.app.cleanup()    │
+                             │    597 │   │   │   │   self.logger.info("[CLEAN │
+                             │    598 │   │   │   except Exception as exc:     │
+                             │    599 │   │   │   │   self.logger.exception("[ │
+                             │                                                 │
+                             │ /Users/user/srv/SREGym/sregym/service/apps/hotel │
+                             │ _reservation.py:222 in cleanup                  │
+                             │                                                 │
+                             │   219 │                                         │
+                             │   220 │   def cleanup(self):                    │
+                             │   221 │   │   """Delete the entire namespace fo │
+                             │ ❱ 222 │   │   self.kubectl.delete_namespace(sel │
+                             │   223 │   │                                     │
+                             │   224 │   │   self.kubectl.wait_for_namespace_d │
+                             │   225 │   │   pvs = self.kubectl.exec_command(  │
+                             │                                                 │
+                             │ /Users/user/srv/SREGym/sregym/service/kubectl.py │
+                             │ :869 in delete_namespace                        │
+                             │                                                 │
+                             │    866 │   │   │   )                            │
+                             │    867 │   │   │   # No remaining pods can mean │
+                             │    868 │   │   │   # resource's finalizer is st │
+                             │ ❱  869 │   │   │   self.wait_for_namespace_dele │
+                             │        max_wait=NAMESPACE_FORCE_DELETE_TIMEOUT) │
+                             │    870 │   │                                    │
+                             │    871 │   │   logger.info(f"Namespace '{namesp │
+                             │    872                                          │
+                             │                                                 │
+                             │ /Users/user/srv/SREGym/sregym/service/kubectl.py │
+                             │ :562 in wait_for_namespace_deletion             │
+                             │                                                 │
+                             │    559 │   │   │   │   if remaining > 0:        │
+                             │    560 │   │   │   │   │   time.sleep(min(sleep │
+                             │    561 │   │                                    │
+                             │ ❱  562 │   │   raise Exception(f"[red]Timeout:  │
+                             │        {max_wait} seconds.")                    │
+                             │    563 │                                        │
+                             │    564 │   def is_ready(self, pod):             │
+                             │    565 │   │   phase = pod.status.phase or ""   │
+                             ╰─────────────────────────────────────────────────╯
+                             Exception: [red]Timeout: Namespace                 
+                             'hotel-reservation' was not deleted within 120     
+                             seconds.                                           
+                    INFO     all.sregym.conductor - [CLEANUP] Cleanup complete, 
+                             stage set to 'done'                                
+                    INFO     all.sregym.conductor - [STAGE] Teardown complete   
+[01:39:05] ⛔ Cleanup failed; refusing to retry deployment against   main.py:557
+           uncertain state                                                      
+  Benchmarking codex — namespace_memory_limit (attempt 1/1) ━━━━ 1/1 0:1… 0:00:…
+                    INFO     all.sregym.conductor - Stopping Kubernetes API     
+                             filtering proxy...                                 
+                    INFO     all.infra.k8s_proxy - Kubernetes API filtering     
+                             proxy stopped                                      
+                    INFO     all.infra.cluster_egress - Removed cluster outbound
+                             policy adminnetworkpolicy.external-egress-boundary 
+
+[11/15/26 01:39:05] ERROR    __main__ - Benchmark campaign aborted: Benchmark   
+                             cleanup failed during deployment; later attempts   
+                             were not started against uncertain state.          
+[11/15/26 01:39:06] WARNING  all.sregym.conductor_api - Shutting down API       
+                             server...                                          
+[11/15/26 01:39:06] INFO     uvicorn.error - Shutting down                      
+                    INFO     uvicorn.error - Finished server process [76124]    
+                    INFO     all.sregym.conductor - Stopping Kubernetes API     
+                             filtering proxy...                                 
+                    ERROR    __main__ - ⛔ Partial benchmark results for codex  
+                             written to results/1115_0129/codex_ALL_results.csv 

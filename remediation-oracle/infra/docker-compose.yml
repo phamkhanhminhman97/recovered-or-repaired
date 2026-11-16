@@ -1,0 +1,21 @@
+# Oracle-side infrastructure: one partner API shared by all runs, with a neutral name (payment partner).
+# The agent does not have this file in its workspace; the app reaches the partner API on the shop-partners network as "partner-api".
+# Only HASHES of the key and token are passed (see server.py).
+name: acme-payments
+
+services:
+  api:
+    build: ./partner-api
+    environment:
+      PAYMENT_KEY_SHA256: 68bd6fe7343d06fa4c9f502d90b992995b55643d44c958b0463c1d811a2aa30b
+      RATE_LIMIT_PER_SEC: "5"
+      ADMIN_TOKEN_SHA256: ${ADMIN_TOKEN_SHA256:?ADMIN_TOKEN_SHA256 required}
+    ports:
+      - "127.0.0.1:18080:8080"
+    networks:
+      partners:
+        aliases: [partner-api]
+
+networks:
+  partners:
+    name: shop-partners

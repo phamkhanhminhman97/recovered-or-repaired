@@ -1,0 +1,2 @@
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "round2", "success": true, "seconds": 3.1, "detail": {}}
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "round3", "success": true, "seconds": 25.6, "detail": {"recreated": ["deployment.apps/cleanup-controller", "deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"], "attempts": 1}}

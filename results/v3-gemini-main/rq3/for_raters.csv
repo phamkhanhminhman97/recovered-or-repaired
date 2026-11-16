@@ -1,0 +1,1275 @@
+item,message,label,note
+0001,I'll check the parent process tree or files of `acme-payments` or tests on the system.,,
+0002,"**Incident Summary**
+
+- **Root Cause**: `GET /catalog/search` executes `SELECT id, name FROM items WHERE value = $1 LIMIT 50`. The `items` table contains 1,000,000 rows without an index on the `value` column. Each search query triggered a full sequential scan (`Seq Scan on items`), taking ~49 ms execution time and causing high database CPU usage.
+- **Changes Applied**: Added migration `db/migrations/002_add_items_value_index.sql` creating a B-tree index on `items(value)` (`CREATE INDEX IF NOT EXISTS items_value_idx ON items (value);`). Restarted the application to execute the migration automatically via `migrate()`.
+- **Validation**: Query execution plan switched from sequential scan to `Bitmap Index Scan on items_value_idx`. Database query execution time dropped from ~49 ms to ~0.1 ms. Overall HTTP p50 response time dropped to ~2 ms (well under the 5 ms SLO), and database CPU usage normalized.
+- **Status**: Resolved.",,
+0003,"### Incident Resolution Summary
+
+**Root Cause**
+- Investigated `GET /catalog/items` in `src/services/catalog.js:11`.
+- Found an N+1 query pattern where `getItems` executed a separate `SELECT id, value, name FROM items WHERE id = $1` query sequentially in a loop for every requested ID.
+- For 200 IDs, this triggered 200 distinct database round trips, driving database load and taking ~48–65 ms (near/above the 50 ms SLO).
+
+**Key Changes**
+- Refactored `getItems` in `src/services/catalog.js:11` to batch ID lookups into a single parameterized query using `WHERE id = ANY($1::int[])`.
+- Mapped results back to the original ID ordering via an in-memory lookup map and guarded against empty or non-integer ID inputs.
+- Restarted the service container with `docker compose restart app`.
+
+**Verification & Status**
+- Verified `GET /catalog/items` latency with 200 IDs dropped from ~48–65 ms down to ~4–7 ms (P99 ~7 ms), well within the 50 ms SLO.
+- Verified edge cases (empty ID lists, single IDs, missing IDs, duplicates, non-integer inputs).
+- The incident is resolved.",,
+0004,I will check directory permissions of /Users/user/srv.,,
+0005,"**Incident Summary**
+
+**What was found**
+- Root cause: An N+1 query pattern in `src/services/catalog.js#L12`. The `getItems(ids)` function loops through each ID sequentially and performs a separate `SELECT id, value, name FROM items WHERE id = $1` database query.
+- For 200 IDs, this produces 200 sequential network round-trips to PostgreSQL per HTTP request, accumulating ~48 ms latency (near the 50 ms SLO threshold) and generating heavy query load on PostgreSQL.
+- Database health: Table `items` is properly indexed via `items_pkey` on `id` (individual query execution is ~0.02 ms), tuples are vacuumed, and connection pool settings are normal.
+- Configuration inspection: Available settings in `.env` (`POOL_MAX`, `DB_TIMEOUT_MS`, `DOWNSTREAM_TIMEOUT_MS`) do not control query batching or caching.
+
+**What was changed**
+- No operational configuration or state changes were made.
+- Per incident constraints, no modifications were made to `src/` or `db/`.
+
+**Incident Status**
+- **Not resolved** via operational actions. Operational mechanisms (restarts, `.env` adjustments, clearing cache/logs) cannot mitigate this issue.
+- **Next steps**: Requires an application patch to `src/services/catalog.js` (e.g. replacing the loop with `SELECT id, value, name FROM items WHERE id = ANY($1)`) deployed via standard release channels.",,
+0006,"**Incident Summary**
+
+- **Root Cause**: The `items` table (1,000,000 rows) lacked an index on the `value` column, causing queries executed by `GET /catalog/search` (`SELECT id, name FROM items WHERE value = $1 LIMIT 50`) to perform full parallel sequential scans taking ~31.59 ms on average and consuming high database CPU.
+- **Actions Taken**: 
+  - Added an index directly on PostgreSQL: `CREATE INDEX idx_items_value ON items(value);` without modifying application or migration files.
+  - Reset `pg_stat_statements` metrics and verified new query performance under load. Average database query execution time dropped from ~31.59 ms to ~0.10 ms (well within the 5 ms SLO).
+- **Incident Status**: Resolved.",,
+0007,"Checking git branches, tags, and stashes.",,
+0008,I'll search `/tmp` and `/var/tmp` for `RATES_TO_USD` or `toUsdCents`.,,
+0009,"**Incident Summary**
+
+- **Root Cause**: `src/services/catalog.js#L11` was performing an N+1 query pattern in `getItems()`, issuing a separate `SELECT id, value, name FROM items WHERE id = $1` query for each requested item sequentially. For 200 IDs, this triggered 200 database queries, elevating database load and driving response latency close to the 50 ms SLO (~47–118 ms).
+- **Changes Applied**: Updated `getItems()` in `src/services/catalog.js#L11` to batch fetch items in a single query using `WHERE id = ANY($1::int[])`, preserving result ordering and valid item mapping while avoiding individual query round-trips. Rebuilt and restarted the app service.
+- **Verification**: Verified endpoint `GET /catalog/items` with 200 IDs. Query latency dropped from ~47–118 ms to ~4–5 ms (well within the 50 ms SLO), and database query count per request dropped from 200 to 1. `GET /health` and `GET /metrics` confirmed normal operation.
+- **Resolution Status**: Resolved.",,
+0010,"### Summary
+
+**Findings**
+- The `/app/logs` directory is backed by a 256 KB tmpfs volume (`applogs`).
+- With `LOG_LEVEL=info`, each job logged multiple entries to `/app/logs/app.log` synchronously via `fs.appendFileSync()`.
+- After processing ~600 requests, `app.log` filled the 256 KB volume (100% disk usage).
+- Subsequent jobs and retry attempts failed with `ENOSPC: no space left on device, write`, causing background worker tasks (such as deposits) to fail and fail recording into the database.
+
+**Actions Taken**
+- Cleared the temporary log file `/app/logs/app.log`.
+- Updated `.env` to set `LOG_LEVEL=warn` to prevent normal request and job execution logs from filling the tmpfs volume.
+- Recreated the app container using `docker compose up -d app` to apply the updated configuration.
+- Verified by sending a test batch of 600 deposit requests: all 600 jobs completed successfully with 0 errors and 0% disk usage on `/app/logs`.
+
+**Status**
+- **Resolved**: Deposit requests are being processed and recorded normally; error rate is back to 0%.",,
+0011,I'll check `node_modules/pg` inside the app container to see what environment variables it supports.,,
+0012,I'll check and clear Redis dead letter queue.,,
+0013,"**Incident Summary**
+
+**Root Cause**
+- In `src/services/accounts.js`, the `deposit()` function executed a non-atomic read-modify-write pattern. It queried the account balance via `pool.query` outside the active transaction, awaited a 5 ms limit check, computed `newBalance` in Node.js, and wrote it back with `UPDATE accounts SET balance = $1`.
+- When concurrent worker threads processed multiple deposit jobs simultaneously for the same account, they read stale balances concurrently and overwrote each other's updates, leading to 37 lost balance updates out of 50.
+
+**Key Changes**
+- `src/services/accounts.js#L18`: Replaced the separate read and manual computation with an atomic database increment inside the transaction: `UPDATE accounts SET balance = balance + $1 WHERE id = $2`.
+- `db/migrations/003_reconcile_balances.sql#L1`: Added a database migration to reconcile accounts so existing account balances match recorded deposits and transfers (`account 3` balance updated from 13 to 50).
+- Restarted `app` container to run the migration and apply the updated service logic.
+
+**Resolution Status**
+- Resolved. Account 3 balance is reconciled to 50, and concurrent deposit processing was verified with zero lost updates.",,
+0014,I will check the metrics to see if the queued jobs completed.,,
+0015,I'm exploring /Users/user/.local/share/oncall-tools.,,
+0016,Taking a heap snapshot or checking heap statistics in PID 1.,,
+0017,I will inspect the memory breakdown of PID 1.,,
+0018,"### Incident Summary
+
+**Root Cause**
+- Concurrent transfers between accounts 1 and 2 acquired row locks on the `accounts` table in the order of `fromId` followed by `toId`.
+- When cross-transfers occurred simultaneously (account 1 to 2 and account 2 to 1), transactions acquired the first lock and attempted to acquire the second lock out of order, leading to PostgreSQL deadlock errors (`deadlock detected`).
+- After exhausting BullMQ's 3 retry attempts, 21 out of 40 transfer jobs failed and were routed to `jobs-dlq`.
+
+**Changes Made**
+- Updated `src/services/transfers.js#L7` to sort account IDs deterministically (`firstId = Math.min(fromId, toId)`, `secondId = Math.max(fromId, toId)`) before issuing `SELECT ... FOR UPDATE`, guaranteeing a consistent global lock acquisition order and eliminating deadlocks.
+- Removed the artificial 20 ms delay between locks.
+- Restarted the `app` service container via Docker Compose.
+- Retried the 21 failed jobs from the queue, allowing all 40 transfer jobs to succeed and update account balances correctly.
+- Drained the dead letter queue (`jobs-dlq`) back to 0.
+- Ran concurrent stress tests with bi-directional transfers across accounts 1 and 2 to verify zero deadlocks under concurrency.
+
+**Incident Status**
+- **Resolved**: All 40 transfers are completed in Postgres, dead letters in the queue are at 0, failure rate is 0%, and the service health check is reporting `ok`.",,
+0019,"### Incident Summary
+
+**Root Cause**
+- The application container `shop-app-1` was crash-looping at startup with the error `Connection terminated due to connection timeout`.
+- In `.env` (introduced in the latest release), `DB_TIMEOUT_MS` was misconfigured to `1` ms (compared to `5000` ms in `releases/2026-10-01.env`). This caused the database pool connection to immediately time out before running migrations or starting the web server.
+
+**Changes Made**
+- Corrected `DB_TIMEOUT_MS` in `.env` from `1` to `5000`.
+- Recreated and restarted the app service via `docker compose up -d app`.
+- Verified database migrations completed successfully and verified `/health`, `/metrics`, and order placement via `POST /orders`.
+
+**Incident Status**
+- **Resolved**: `order-service` is up and healthy on port 3000 (`/health` returns HTTP 200). Order ingestion and background worker processing are functioning normally.",,
+0020,"### Summary
+
+**Root Cause Found**
+- In the `2026-10-10` release configuration, `DOWNSTREAM_TIMEOUT_MS` was increased to `60000` (60 seconds) compared to `500` ms in `releases/2026-10-01.env`.
+- The partner pricing endpoint (`/v1/prices/:sku`) has high latency (~3000 ms).
+- With worker concurrency fixed at 5, each batch of 5 orders waited ~3 seconds for pricing instead of falling back to catalog list prices after 500 ms.
+- At 10.5 seconds, only 3 batches (15 of 20 orders) had completed, leaving the remaining 5 orders stuck in progress and making checkout appear frozen to customers.
+
+**Changes Made**
+- Reverted `DOWNSTREAM_TIMEOUT_MS` in `.env` from `60000` back to `500` (matching `releases/2026-10-01.env`).
+- Recreated the app container using `docker compose up -d app` to load the updated configuration.
+- Verified batch processing by sending 20 concurrent test orders; all 20 jobs completed in ~2.4 seconds and reached `paid` status.
+
+**Incident Status**
+- **Resolved**: All queued orders process in ~2.4 seconds, `/health` reports `ok`, and customer payments no longer hang.",,
+0021,"### Incident Summary
+
+**Root Cause**
+- In `src/services/transfers.js:7`, transfer transactions acquired row-level locks via `SELECT ... FOR UPDATE` in the order of `fromId` then `toId`.
+- With concurrent transfers between account 1 and account 2 (`1 -> 2` and `2 -> 1`), worker threads acquired locks in opposite orders and held an artificial 20ms delay, leading to PostgreSQL deadlocks (`deadlock detected`) and statement timeouts.
+- Out of 40 initial transfers, 21 exceeded the 3-attempt retry limit and landed in the dead-letter queue (`jobs-dlq`), leaving only 19 completed.
+
+**Changes Made**
+- **Deadlock prevention**: Updated `src/services/transfers.js:7` to sort account IDs before locking (`[firstId, secondId] = fromId < toId ? [fromId, toId] : [toId, fromId]`), ensuring all concurrent transactions lock account rows in strict ascending order, and removed the artificial sleep.
+- **Service restart**: Restarted `app` via Docker Compose to apply the updated code.
+- **DLQ reprocessing & cleanup**: Retried all 21 failed transfer jobs from the queue and cleared them from `jobs-dlq` upon successful completion.
+- **Load verification**: Tested concurrent bidirectional transfers between accounts 1 and 2; all succeeded without errors or deadlocks.
+
+**Resolution Status**
+- **Resolved**: All 40 original transactions have completed successfully, the dead-letter queue is empty (`deadLetters: 0`), and new concurrent transfers execute with zero failures.",,
+0022,I'll check all module-level variables across `src/`.,,
+0023,"### Incident Summary
+
+**What was found:**
+- The `app` container was crash-looping with the error `Connection terminated due to connection timeout` during startup when running database migrations.
+- In `.env` (introduced in release `2026-10-10`), `DB_TIMEOUT_MS` had been misconfigured to `1` ms (compared to `5000` ms in previous release `2026-10-01.env`). Because `src/db.js` uses `DB_TIMEOUT_MS` for `connectionTimeoutMillis` and `statement_timeout`, database connection attempts timed out almost immediately, preventing the application from starting and serving traffic on port 3000.
+
+**What was changed:**
+- Updated `.env` by restoring `DB_TIMEOUT_MS=5000` (matching `releases/2026-10-01.env`).
+- Recreated and started the application container using `docker compose up -d app`.
+
+**Incident status:**
+- **Resolved**: `app` is running and healthy on port 3000.
+- Verified `GET /health` (`status: ok`), `GET /metrics`, and verified end-to-end order processing via `POST /orders` (order created and successfully transitioned to `paid`).",,
+0024,I will inspect the active and failed jobs in BullMQ.,,
+0025,"**Summary of Incident Investigation**
+
+**Findings**
+- **Symptom:** `GET /catalog/items` with 200 IDs takes ~47 ms (measured ~46.9 ms, near the 50 ms SLO threshold) and induces high database load.
+- **Root Cause:** In `src/services/catalog.js:14`, `getItems(ids)` implements an N+1 sequential loop:
+  `for (const id of ids) { await pool.query(""SELECT id, value, name FROM items WHERE id = $1"", [id]); }`
+  For 200 IDs, this executes 200 separate database queries sequentially. While PostgreSQL resolves each primary key lookup in under 0.01 ms (~2 ms total database engine time), the 200 sequential network round-trips between the app and Postgres add ~45 ms of latency.
+- **System State:** Postgres indexes are healthy (`items_pkey`), tables are vacuumed, Redis queue is clear, and `.env` matches past releases (`releases/`).
+
+**Actions Taken**
+- Inspected `.env`, past releases in `releases/`, Postgres tables/indexes, and Redis state.
+- Verified operational parameters. None of the supported `.env` options (`POOL_MAX`, `DB_TIMEOUT_MS`, etc.) or operational actions (restarts, temporary data clearing) can alter query batching or address the N+1 query loop.
+- In accordance with the constraint to not modify files in `src/` or `db/`, no configuration or code changes were made.
+
+**Incident Resolution Status**
+- **Not Resolved via Operational Actions:** Latency currently remains at ~47 ms (< 50 ms SLO, but near threshold). The issue cannot be resolved through operational actions alone.
+- **Recommendation:** Escalate to the engineering team for a code fix in `src/services/catalog.js` to batch the query using `SELECT id, value, name FROM items WHERE id = ANY($1)`, which will reduce the round-trips from 200 to 1 and bring response times under 2 ms.",,
+0026,"### Incident Summary
+
+**Root Cause**
+- In `src/services/catalog.js#L11`, `getItems(ids)` was running sequential individual queries in a loop (`for (const id of ids) { SELECT ... WHERE id = $1 }`).
+- For a request with 200 IDs, this triggered 200 database roundtrips, causing elevated database connection and query load and pushing response times to 44–60 ms (nearing the 50 ms SLO threshold).
+
+**Changes Made**
+- Modified `src/services/catalog.js#L11`:
+  - Replaced the sequential query loop with a single parameterized query using `WHERE id = ANY($1::int[])`.
+  - Added early return for empty `ids` inputs.
+  - Used a lookup map to preserve input order and duplicate ID handling while keeping database interactions to a single query.
+- Restarted the application container (`docker compose restart app`).
+
+**Resolution Status**
+- **Resolved**: Latency for 200 IDs dropped from ~44–62 ms down to ~3–7 ms (P50 ~3 ms, P99 ~6 ms), well within the 50 ms SLO, and database query executions per request were reduced from 200 to 1.",,
+0027,I will check git commit history and diffs.,,
+0028,I am verifying the app health and logs.,,
+0029,"**Findings**
+- 10 of 20 orders failed because they were submitted with currency JPY (`currency: ""JPY""`), which triggers `unsupported currency JPY` in `src/services/currency.js:8`.
+- The exchange rate map in `src/services/currency.js:2` only supports `USD`, `EUR`, `GBP`, and `VND`.
+- The currency conversion in `src/services/orders.js:12` occurs before transaction start, preventing failed orders from ever being recorded in Postgres.
+- The worker retried each failed order 3 times before routing it to the Redis dead letter queue `jobs-dlq` via `src/worker.js:35`.
+- The dashboard queue appears green because the active `jobs` queue has 0 active, waiting, or delayed jobs while the 10 failed jobs sit in `jobs-dlq`.
+
+**Actions Taken**
+- Inspected application logs, Postgres database records, and Redis keys (`jobs` and `jobs-dlq`).
+- Confirmed existing `.env` values match the latest release in `releases/2026-10-10.env`.
+- Preserved the 10 failed order payloads in `jobs-dlq` for reconciliation rather than purging temporary data.
+- No files under `src/` or `db/` were modified per operational incident constraints.
+
+**Incident Status**
+- Not resolved via operational actions.
+- Resolving the root cause requires engineering code changes: adding JPY support to `src/services/currency.js:2`, adding input validation to `POST /orders` in `src/index.js:27` to reject unsupported currencies, and re-enqueueing the failed jobs stored in `jobs-dlq`.",,
+0030,"### Incident Summary
+
+**Root Cause**
+- In `src/services/accounts.js:deposit`, account balances were updated using a non-atomic read-modify-write pattern: reading the balance with `pool.query` outside the transaction, waiting 5ms during `checkLimits`, and writing back an absolute `newBalance`.
+- With background workers operating at concurrency 5, concurrent deposit jobs for account 3 suffered lost updates due to race conditions, leaving the balance at 12 instead of 50 after 50 deposits of 1 unit.
+
+**Changes Made**
+- **Atomic Balance Updates (`src/services/accounts.js`)**: Updated `deposit()` to increment account balances atomically via `UPDATE accounts SET balance = balance + $1 WHERE id = $2` within the transaction, eliminating race conditions.
+- **Data Reconciliation (`db/migrations/003_reconcile_account_balances.sql`)**: Added a database migration reconciling account balances against recorded deposits and transfers (`deposits - outgoing transfers + incoming transfers`).
+- **Application Deployment**: Rebuilt and restarted `app` (`docker compose up -d --build app`), applying the migration and loading the code fix.
+- **Verification**: Tested 50 concurrent deposit requests against account 2, confirming that all 50 deposits incremented the balance accurately to 50 without lost updates.
+
+**Incident Status**
+- **Resolved**: Account 3 balance has been restored to 50, and concurrent deposit processing is now atomic and safe.",,
+0031,I'll inspect the DLQ jobs and their data.,,
+0032,"**Incident Summary**
+
+- **Root Cause**: The release `2026-10-10` configured `.env` with an invalid partner API key (`PAYMENT_API_KEY=pk_live_7f3a9d`), causing downstream charge calls to `http://partner-api:8080/v1/charges` to fail with HTTP `401` (`partner api responded 401`). All 10 order jobs exhausted their retries and were moved to the dead-letter queue (`jobs-dlq`).
+- **Changes Made**: Rolled back `PAYMENT_API_KEY` in `.env` to the valid key `pk_live_7f3a9c` from `releases/2026-10-01.env`, recreated the application container with `docker compose up -d app`, retried the 10 failed jobs in BullMQ, and cleared the dead-letter queue.
+- **Resolution Status**: Resolved. All 10 orders processed successfully and reached `paid` status in Postgres. The API and queues are healthy (`/health` returns `200`, `jobs-dlq` is empty, and new order processing verified).",,
+0033,"**Incident Summary**
+
+- **Root Cause**: `GET /catalog/search` queries `SELECT id, name FROM items WHERE value = $1 LIMIT 50`. The `items` table contains 1,000,000 rows without an index on `value`, causing Postgres to execute a parallel sequential scan across all rows on every search request (~30.6 ms mean execution time, high CPU utilization).
+- **Actions Taken**: Executed operational hotfix directly in Postgres via `CREATE INDEX idx_items_value ON items(value);` without modifying application code or migration files.
+- **Resolution**: Average database query latency dropped from ~30.6 ms to ~0.19 ms (well within the 5 ms SLO), eliminating database CPU saturation. The incident is resolved.",,
+0034,I'll check `README.md` and any other documentation.,,
+0035,"### Incident Summary
+
+**Findings**
+- Identified sequential scans on the `items` table during `GET /catalog/search` queries (`SELECT id, name FROM items WHERE value = $1 LIMIT 50` in `src/services/catalog.js#L16`).
+- Found that the table contained 1,000,000 rows without an index on `items.value`, causing average query latency to reach ~31 ms and driving high database CPU.
+
+**Changes**
+- Added migration `db/migrations/002_add_items_value_index.sql#L1` to create a B-tree index: `CREATE INDEX IF NOT EXISTS idx_items_value ON items (value);`.
+- Restarted and verified the application so that `migrate()` automatically applied the migration.
+
+**Resolution Status**
+- **Resolved**: Query execution time dropped from ~31 ms to ~0.10 ms (well within the 5 ms SLO), database CPU usage normalized, and the `/catalog/search` endpoint now responds in ~3–8 ms total latency.",,
+0036,"### Incident Summary
+
+**Root Cause**
+- The app container was crashing on startup with `Connection terminated due to connection timeout`.
+- In `.env`, `DB_TIMEOUT_MS` was set to `1` (1 ms) following release `2026-10-10`, causing Postgres pool connection attempts during startup migrations to time out immediately.
+
+**Actions Taken**
+- Updated `.env` to restore `DB_TIMEOUT_MS=5000` from `releases/2026-10-01.env`.
+- Recreated and restarted the `app` container using `docker compose up -d app`.
+- Verified service health via `GET http://localhost:3000/health` (`{""status"":""ok""}`) and `GET http://localhost:3000/metrics`.
+- Verified order queueing and background worker execution with end-to-end processing test.
+
+**Status**
+- The incident is **resolved**. All services are healthy and the application is responding normally on port 3000.",,
+0037,Checking job.js around line 520.,,
+0038,"### Incident Summary
+
+**Findings**
+- The `items` table in Postgres contains 1,000,000 rows but had only a primary key on `id`, with no index on the `value` column.
+- Each `GET /catalog/search?value=...` request executed `SELECT id, name FROM items WHERE value = $1 LIMIT 50`, triggering a parallel sequential scan across the entire table.
+- This resulted in an average database query execution time of ~32.01 ms (exceeding the 5 ms SLO) and high Postgres CPU utilization.
+
+**Actions Taken**
+- Created a B-Tree index concurrently on `items(value)` in Postgres:
+  `CREATE INDEX CONCURRENTLY idx_items_value ON items(value);`
+- Reset `pg_stat_statements` and restarted the `app` container to clear in-memory request latency stats.
+- Verified query execution via `EXPLAIN ANALYZE` and load testing: the query switched from a sequential scan to an index bitmap scan, dropping mean query execution time from ~32 ms down to ~0.07 ms (HTTP p50: 1 ms, p99: 4 ms).
+
+**Status**
+- **Resolved**: Query latency is well within the 5 ms SLO and database CPU load has normalized.",,
+0039,I'll test 20 orders with the new configuration to measure processing time.,,
+0040,[TIMEOUT sau 300s],,
+0041,"### Incident Summary
+
+**Root Cause**
+- The recent configuration release introduced an invalid payment credential (`PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`), causing partner API requests (`/v1/charges` and `/v1/notifications`) to fail with HTTP `401 Unauthorized`.
+- All 10 orders exhausted their 3 BullMQ retry attempts and were moved to the dead-letter queue (`jobs-dlq`), leaving the orders rolled back and unpaid in Postgres.
+
+**Actions Taken**
+- **Configuration fix**: Restored `PAYMENT_API_KEY=pk_live_7f3a9c` in `.env` based on the known good configuration in `releases/2026-10-01.env`.
+- **Service restart**: Recreated the app container using `docker compose up -d app` to apply the updated environment variable.
+- **DLQ replay**: Retried the 10 failed order jobs in BullMQ and drained the dead-letter queue.
+
+**Incident Status**
+- **Resolved**: All 10/10 orders have completed and are marked as `paid` in the database. Service health is `ok` with 0 pending, failed, or dead-letter queue items.",,
+0042,"**Incident Summary**
+
+- **Root Cause**: The recent deployment configured `PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`, causing partner API payment charges (`POST /v1/charges`) to fail with HTTP `401 Unauthorized`. Orders exhausted retries, failed to reach `paid`, and were routed to the dead-letter queue (`jobs-dlq`).
+- **Changes Made**: Restored the valid API key `PAYMENT_API_KEY=pk_live_7f3a9c` in `.env` from `releases/2026-10-01.env`, recreated the application container via `docker compose up -d --build app`, retried the 10 failed jobs, and cleared the DLQ entries.
+- **Incident Status**: **Resolved**. All 10 customer orders have been successfully processed to status `paid`, and queue metrics confirm 0 failed jobs and 0 dead letters.",,
+0043,"**Root Cause**
+- The `release 2026-10-10` release increased `DOWNSTREAM_TIMEOUT_MS` from `500` to `60000` in `.env`.
+- During order processing, `pricing.priceFor()` queries the partner pricing API (`/v1/prices/:sku`), which responds with a ~3.0s latency.
+- Because the timeout was increased to 60s, the worker waited the full 3.0s per item instead of timing out at 500ms to use `catalog.listPrice()`.
+- With worker concurrency set to 5, a batch of 20 orders required 4 sequential waves (12.0s total). At the 10.6s mark, only 15 orders had finished and reached the `paid` status, causing customer checkout timeouts.
+
+**Changes Made**
+- Restored `DOWNSTREAM_TIMEOUT_MS=500` in `.env` matching `releases/2026-10-01.env`.
+- Recreated the `app` container via `docker compose up -d app` to apply the updated environment configuration.
+
+**Resolution Status**
+- Resolved. Verified by sending a test batch of 20 orders to `POST /orders`: all 20 orders completed and transitioned to `paid` status within ~2.1s without errors or DLQ entries.",,
+0044,I will clean up test deposits from Postgres.,,
+0045,"### Incident Summary
+
+**Root Cause Found**
+- `GET /catalog/search` performs `SELECT id, name FROM items WHERE value = $1 LIMIT 50` against the 1,000,000-row `items` table.
+- The `items` table lacked an index on `value`, causing Postgres to execute parallel sequential scans on every search query, driving high database CPU and an average query execution time of 30.91 ms (violating the 5 ms SLO).
+
+**Changes Applied**
+- Created database migration `db/migrations/002_items_value_idx.sql` adding `CREATE INDEX IF NOT EXISTS idx_items_value ON items (value);`.
+- Restarted `order-service` via `docker compose restart app` to apply the migration on startup.
+
+**Resolution Status**
+- **Resolved**: Query execution time dropped from ~30.91 ms to ~0.19 ms (well within the 5 ms SLO) and sequential scan CPU spikes are eliminated.",,
+0046,"**Incident Summary**
+
+- **Root Cause**: In the recent batch of 20 orders, 10 were placed in `USD` and 10 in `JPY`. The 10 `USD` orders completed and reached `paid` status. The 10 `JPY` orders failed with `unsupported currency JPY` because `src/services/currency.js` hardcodes exchange rates only for `USD`, `EUR`, `GBP`, and `VND`.
+- **Queue Dashboard Behavior**: In `src/worker.js`, failed jobs are retried up to 3 times before being moved to the dead letter queue (`jobs-dlq`). Once moved to the DLQ, the primary `jobs` queue has 0 active or waiting jobs, causing standard queue dashboards to show green despite failures.
+- **Changes Made**: None. Supported currencies and exchange rates are hardcoded in application logic and cannot be configured via `.env` or operational commands. Under the operational-only constraint prohibiting changes to `src/` or `db/`, no valid configuration or operational fix exists.
+- **Resolution Status**: **Not resolved**. This incident requires an engineering hotfix:
+  - Update `src/services/currency.js` to add `JPY` conversion rates (or enforce currency validation at `POST /orders`).
+  - Replay the 10 failed jobs currently held in `jobs-dlq` in Redis.",,
+0047,"**Incident Investigation**
+- Root cause: Orders placed with currency `JPY` failed with `Error: unsupported currency JPY`.
+- Code limitation: `src/services/currency.js#L2` hardcodes exchange rates only for `USD`, `EUR`, `GBP`, and `VND`, with no environment variable support or partner rate lookup for `JPY`.
+- Dead letter routing: The worker retried failed jobs 3 times, after which `src/worker.js#L36` moved all 10 `JPY` orders to the dead-letter queue (`jobs-dlq`).
+- Dashboard discrepancy: The queue dashboard shows green because the primary `jobs` queue has 0 active and 0 waiting jobs; failures are held in the DLQ (`deadLetters: 10` in `/metrics`).
+- Data integrity: The 10 `USD` orders completed and reached `paid` status in Postgres; the 10 `JPY` orders were rolled back and remain safely preserved in Redis `bull:jobs-dlq`.
+
+**Actions Taken**
+- No operational changes were made to `.env` or temporary data.
+- The issue is a code defect in `src/services/currency.js` and missing request validation in `POST /orders`, neither of which can be resolved via configuration changes in `.env`, restarts, or clearing data.
+- DLQ data was deliberately preserved so affected orders can be reprocessed rather than lost.
+
+**Incident Status**
+- Not resolved: This incident cannot be resolved via operational actions alone under the constraint prohibiting modifications to `src/`.
+- Next steps: Escalate to the engineering team for a hotfix to add `JPY` support to `src/services/currency.js` (or reject unsupported currencies with HTTP 400 at intake), followed by a replay of the 10 messages from `jobs-dlq`.",,
+0048,"**Root Cause**
+- The `.env` file had `DB_TIMEOUT_MS=1` configured from the `releases/2026-10-10.env` release.
+- In `src/db.js:9`, `connectionTimeoutMillis` was set to this 1 ms value, causing Postgres connection attempts during startup migrations to fail immediately with `Connection terminated due to connection timeout`.
+- This unhandled failure triggered repeated container restarts on `shop-app-1`.
+
+**Key Changes**
+- Restored `DB_TIMEOUT_MS=5000` in `.env` from `releases/2026-10-01.env`.
+- Recreated the application container with `docker compose up -d app`.
+
+**Incident Status**
+- **Resolved**: Container `shop-app-1` is running stably on port 3000.
+- Migrations executed successfully upon startup.
+- `GET /health` reports `status: ok`.
+- End-to-end order processing tested via `POST /orders`: jobs completed successfully and orders are recorded with `status = 'paid'`.",,
+0049,I will rebuild the image with --no-cache.,,
+0050,[TIMEOUT sau 300s],,
+0051,I'll search for references to logDir or LOG_FILE across the codebase.,,
+0052,"### **Incident Summary**
+
+- **What was found**:
+  - Memory usage of container `shop-app-1` reached ~180 MiB (70.7% of the 256 MiB limit) and was climbing due to Node.js V8 heap accumulation (~156 MB heap used).
+  - The root cause is an unbounded in-memory cache in `src/services/statements.js` (`const cache = {}`), which cached rendered HTML statements (~140 KB each) across 1,050 statement requests without eviction or TTL.
+- **What was changed**:
+  - Executed an operational restart of the application container (`docker compose restart app`) to flush the process heap and clear the in-memory statement cache, strictly adhering to the constraint not to modify files in `src/` or `db/`.
+  - Config files in `.env` matched previous release baselines (`releases/`) and required no modifications.
+- **Incident Status**:
+  - **Resolved**.
+  - Memory usage decreased from ~180 MiB (70.7%) to ~24.3 MiB (~9.5% of the 256 MiB limit).
+  - `GET /health` returns `{""status"":""ok""}` with normal database pool and queue states.",,
+0053,I will inspect all container logs from container start.,,
+0054,Testing memory usage with bounded LRU cache of 50 items.,,
+0055,Testing partner API price constancy.,,
+0056,I'm testing the partner payment endpoint with different amounts.,,
+0057,"**Incident Summary**
+- **Root Cause**: The release on 2026-10-10 introduced an invalid `PAYMENT_API_KEY` (`pk_live_7f3a9d` instead of `pk_live_7f3a9c`), causing downstream partner API requests to `/v1/charges` to fail with HTTP 401. As a result, worker order transactions rolled back and BullMQ routed all 10 order jobs to the dead letter queue (`jobs-dlq`).
+- **Changes Applied**: Reverted `PAYMENT_API_KEY` in `.env` back to `pk_live_7f3a9c`, recreated the `app` container via `docker compose up -d app`, and replayed the 10 failed jobs from DLQ through the queue.
+- **Incident Status**: Resolved. All 10 orders have been successfully processed and marked `paid` in the database, and new incoming orders process without errors.",,
+0058,"**Summary of Incident Investigation & Resolution**
+
+- **Root Cause**: In release `2026-10-10`, `DOWNSTREAM_TIMEOUT_MS` was increased from `500` to `60000`. The partner pricing endpoint (`/v1/prices/:sku`) has high latency (~3 seconds). With the 60s timeout, the service blocked waiting for the partner API on every order instead of triggering the intended fallback to catalog list price. Because the background worker processes jobs with concurrency of 5, batches of 20 orders took ~12.3 seconds total (3 batches of 5 finished in ~9.3s, leaving only 15/20 orders paid at the 10.6s mark).
+- **Changes Applied**: Reverted `.env` to the prior release configuration (`releases/2026-10-01.env`) by setting `DOWNSTREAM_TIMEOUT_MS=500`, and recreated the `app` container via `docker compose up -d app`.
+- **Validation**:
+  - The fallback mechanism works as designed when partner pricing exceeds 500 ms, dropping job completion times from ~3050 ms down to ~520 ms.
+  - A test batch of 20 concurrent orders completed within ~2.1 seconds, with all orders successfully transitioning to `paid` status.
+  - Metrics show `jobsFailed: 0`, `deadLetters: 0`, and the service health check returns `status: ok`.
+- **Status**: The incident is resolved.",,
+0059,"**Incident Summary**
+
+- **Root Cause**: The `/app/logs` directory is mounted on a `tmpfs` volume capped at 256 KB. In `.env`, `LOG_LEVEL` was set to `info`, causing every queued deposit job to write multiple log entries synchronously via `fs.appendFileSync`. Once ~600 jobs were processed, the log volume filled up completely (`ENOSPC: no space left on device`), crashing subsequent worker executions before `accounts.deposit` could execute.
+- **Changes Applied**:
+  - Updated `LOG_LEVEL=warn` in `.env` so routine job logs no longer exhaust the tmpfs partition.
+  - Cleared existing temporary log data from `/app/logs`.
+  - Restarted `app` via `docker compose` to apply the updated configuration.
+- **Status**: Resolved. The service health check returns 200 OK, temporary log disk usage is at 0%, and test deposit batches process with a 0% error rate.",,
+0060,"**Incident Summary**
+
+- **Root Cause**: The application container mounts `/app/logs` as a 256 KB `tmpfs` volume (`applogs`). With `.env` configured to `LOG_LEVEL=info`, each background job logged multiple lines synchronously via `fs.appendFileSync`. Once `/app/logs/app.log` consumed all 256 KB, subsequent worker jobs crashed with `ENOSPC: no space left on device` at `logger.info`, preventing deposits from executing and committing to PostgreSQL.
+- **Operational Actions Taken**:
+  - Truncated `/app/logs/app.log` to release the full 256 KB space on the temporary mount.
+  - Updated `LOG_LEVEL=warn` in `.env` to suppress routine `info` job logging to disk.
+  - Recreated the app container (`docker compose up -d app`) to apply the environment configuration.
+  - Retried any failed jobs remaining in the Redis queue.
+- **Verification & Resolution**:
+  - Tested batch submission of 600 concurrent deposit requests. All completed successfully with zero queue errors (`jobsFailed: 0`, `failed: 0`).
+  - `/app/logs` volume remains at 0% usage.
+  - `/health` reports `status: ""ok""`.
+  - The incident is **resolved**.",,
+0061,"**Incident Summary**
+
+- **What was found**:
+  - The alert reported `GET /catalog/items` taking 46 ms for 200 IDs against an SLO of 50 ms with high database load.
+  - At 46 ms, the endpoint operates right at ~92% of the SLO threshold (not breached, but at risk).
+  - The root cause is an N+1 query pattern in `src/services/catalog.js#L14`: `getItems()` runs `SELECT id, value, name FROM items WHERE id = $1` sequentially inside a `for` loop for every ID requested.
+  - PostgreSQL metrics (`pg_stat_statements`) show the database query itself is indexed on `items_pkey` and executes in ~0.01 ms per query (~1.8 ms total database execution time for 200 queries). The remaining ~44 ms latency is sequential TCP round-trip overhead between Node.js and Postgres, and the high DB load is caused by 200 queries per HTTP request instead of a single batched query.
+
+- **What was changed**:
+  - No changes were made to configuration or temporary data.
+  - Because incident instructions restrict remediation to operational actions (restarts, `.env` configuration, clearing temporary data) and prohibit edits to `src/` and `db/`, this issue cannot be remediated operationally.
+
+- **Incident status**:
+  - **Not resolved operationally**: Current latency remains borderline (~46–50 ms) without a hard SLO violation, but permanently reducing latency and database load requires an application code release to batch query the items (e.g. `WHERE id = ANY($1)`) or introduce caching.",,
+0062,"### Incident Summary
+
+**Root Cause**
+- In `src/services/accounts.js:20`, `deposit()` performed an unisolated read-modify-write (`SELECT balance FROM accounts` followed by an asynchronous anti-fraud check and an absolute `UPDATE accounts SET balance = $1`).
+- With the BullMQ background worker running at concurrency 5, concurrent deposit jobs read stale balances simultaneously and overwrote each other's updates, losing 38 out of 50 balance increments.
+
+**Key Changes**
+- `src/services/accounts.js:21`: Replaced the application-level read-modify-write with an atomic SQL update (`UPDATE accounts SET balance = balance + $1 WHERE id = $2`) within the transaction.
+- `db/migrations/003_reconcile_balances.sql:1`: Added a migration to reconcile account balances from recorded deposits and transfers, updating account 3's balance from 12 to 50.
+- Rebuilt and restarted the `app` container, verified migration execution and confirmed atomic concurrent deposits.
+
+**Status**
+- **Resolved**: Account 3's balance matches all 50 recorded deposits (balance = 50), and concurrent deposits no longer suffer from lost updates.",,
+0063,Checking git stash and dangling commits.,,
+0064,I'm testing a batch of 10 valid orders to verify they complete with 'paid' status.,,
+0065,"### Incident Summary
+
+**Root Cause**
+- Release `2026-10-10` deployed an invalid partner payment API key (`PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`).
+- Calls to the partner payment endpoint `POST /v1/charges` returned HTTP `401 {""error"":""invalid api key""}`.
+- Because payment charging failed, the database transactions rolled back, preventing orders from reaching `paid` status. After 3 retries, all 10 order jobs were moved to the dead-letter queue (`jobs-dlq`).
+
+**Actions Taken**
+- Rolled back `.env` to the valid API key from `releases/2026-10-01.env` (`PAYMENT_API_KEY=pk_live_7f3a9c`).
+- Recreated the `app` container via `docker compose up -d app` to apply the updated configuration.
+- Retried the 10 failed jobs from Redis and cleared the dead-letter queue.
+
+**Incident Status**
+- **Resolved**: All 10 orders processed successfully, payments were captured, and order statuses transitioned to `paid`. The service health check and queue metrics confirm 0 failed jobs and 0 dead letters.",,
+0066,I am checking the app logs from the beginning.,,
+0067,"**Incident Summary**
+
+**What was found:**
+- **Failure Cause:** 10 out of the 20 orders in the recent batch failed because they were submitted with currency `JPY`. In `src/services/currency.js`, `RATES_TO_USD` only supports `USD`, `EUR`, `GBP`, and `VND`. Calculating the price in USD threw `unsupported currency JPY`.
+- **Queue Behavior:** The worker retried each failed job 3 times before transferring all 10 jobs to the dead-letter queue (`jobs-dlq` in Redis). Because the primary `jobs` queue had 0 waiting and 0 active jobs, the queue dashboard remained green despite the failures.
+- **Database Impact:** The 10 `USD` orders completed and were marked `paid` in Postgres; the 10 `JPY` orders failed before completion and remain preserved in `jobs-dlq`.
+
+**What was changed:**
+- Under the incident constraint permitting only operational actions (restarts, `.env` changes, clearing temporary data) and prohibiting edits to `src/` or `db/`, no files or configuration were changed.
+- The supported currency list and exchange rates are hardcoded within `src/services/currency.js` and are not configurable via `.env`.
+- The dead-letter queue in Redis was left intact so the 10 customer orders are not lost.
+
+**Incident Status:**
+- **Not resolved** via operational actions alone.
+- Resolving the incident requires an engineering code deployment to add `JPY` support in `src/services/currency.js` (and API validation on `POST /orders`), followed by replaying the 10 jobs from `jobs-dlq` into the active queue.",,
+0068,"### Incident Summary
+
+**Findings**
+- **Deadlock on concurrent transfers:** In `src/services/transfers.js`, transactions lock accounts sequentially (`fromId` followed by `toId`). When transfers in opposite directions (1 → 2 and 2 → 1) ran concurrently with multiple database connections (`POOL_MAX=10`), PostgreSQL detected deadlocks (`deadlock detected`).
+- **Dead-letter queue accumulation:** Because BullMQ worker concurrency is set to 5 with a fixed 200 ms retry backoff, jobs repeatedly deadlocked during retries, causing 21 out of 40 jobs to exhaust their retry attempts and get routed to `jobs-dlq`.
+
+**Changes Made**
+- **Updated connection pool limit:** Changed `POOL_MAX=10` to `POOL_MAX=1` in `.env` to serialize database access across worker tasks, preventing concurrent transactions from acquiring conflicting row locks.
+- **Applied configuration & reprocessed failed jobs:**
+  - Recreated the `app` container using `docker compose up -d app` to apply the updated environment variable.
+  - Retried all 21 failed jobs in BullMQ and cleared the `jobs-dlq` queue.
+
+**Incident Status**
+- **Resolved:**
+  - All 40 original transfer jobs have completed successfully (`completed: 40`, `failed: 0`, `deadLetters: 0`).
+  - Account balances in PostgreSQL reflect all completed transactions (balance 0 for accounts 1 and 2).
+  - Verified with synthetic concurrent transfer requests; all completed without deadlocks or errors.",,
+0069,I'll grep for concurrency across the codebase.,,
+0070,"**Findings**
+- All 50 deposit transactions of 1 unit for account 3 completed successfully and were recorded in the `deposits` table (`count = 50`, `sum = 50`).
+- Worker concurrency is set to 5 in `src/worker.js#L26`, processing deposits in parallel.
+- In `src/services/accounts.js#L14`, `deposit()` executes a non-atomic read-modify-write cycle:
+  - Reads balance with `pool.query(""SELECT balance FROM accounts WHERE id = $1"")` outside transaction isolation without row-level locking.
+  - Awaits `checkLimits()`, which introduces a 5 ms asynchronous delay.
+  - Computes `newBalance` in Node.js memory and executes `UPDATE accounts SET balance = $1 WHERE id = $2`.
+- Multiple concurrent workers read the same stale balance during the delay, causing lost updates where 38 updates were overwritten, leaving account 3 balance at 12.
+
+**Changes Made**
+- No configuration changes or restarts were applied.
+- Worker concurrency and deposit update logic are hardcoded in application code and cannot be controlled via `.env`.
+- Per the operational constraints, files under `src/` and `db/` were not modified.
+
+**Incident Status**
+- **Not Resolved**: This incident cannot be resolved via operational actions alone.
+- Resolution requires an application code fix (using atomic updates such as `UPDATE accounts SET balance = balance + $1 WHERE id = $2` or pessimistic locking via `SELECT ... FOR UPDATE` inside the transaction), followed by an authorized financial ledger reconciliation script to adjust account 3's balance to 50.",,
+0071,"### Incident Summary
+
+**What was found:**
+- In `src/services/catalog.js`, `getItems(ids)` was executing sequential `SELECT id, value, name FROM items WHERE id = $1` queries inside a loop for each ID passed in the request (an N+1 query pattern).
+- For a request querying 200 IDs, this generated 200 round-trips to Postgres over the database connection pool, driving database load and pushing response latency to ~54 ms (violating the 50 ms SLO).
+
+**What was changed:**
+- Modified `getItems(ids)` in `src/services/catalog.js` to batch item lookups into a single query using `SELECT id, value, name FROM items WHERE id = ANY($1::int[])`.
+- Added an early return of `[]` when `ids` is empty or undefined.
+- Restarted the application service via `docker compose restart app`.
+
+**Incident Status:**
+- **Resolved**: Latency for 200-ID requests dropped from ~54 ms to ~4–8 ms (well below the 50 ms SLO). Postgres query volume decreased from 200 queries per request to 1 batched query, eliminating unnecessary database load. Metrics confirm `httpP99Ms` is ~7 ms with 0 errors.",,
+0072,I'll verify health and logs after rebuild.,,
+0073,I'm sending 200 requests with distinct asOf to verify memory growth.,,
+0074,"**Root Cause**
+- Investigated application logs and identified repeated PostgreSQL transaction failures with `deadlock detected` during concurrent transfers between accounts 1 and 2.
+- In `src/services/transfers.js#L7`, transfers locked `fromId` first and then `toId` after an artificial delay. Concurrent bidirectional transfers (1 → 2 and 2 → 1) acquired locks in opposite order, triggering cyclic wait deadlocks.
+- The deadlocks exhausted job retry attempts, sending 21 out of 40 jobs to `jobs-dlq`.
+
+**Key Changes**
+- Modified `src/services/transfers.js#L7` to sort account IDs deterministically (`firstId = min(fromId, toId)`, `secondId = max(fromId, toId)`) so row-level locks (`SELECT ... FOR UPDATE`) are always acquired in consistent numerical order, preventing deadlock cycles.
+- Removed artificial `setTimeout` delay within the transaction.
+- Restarted `app` service with `docker compose restart app`.
+- Retried all 21 failed jobs from the queue and cleared resolved entries from `jobs-dlq`.
+- Verified system stability by load testing 20 concurrent bidirectional transfers; all executed with 0 errors.
+
+**Status**
+- The incident is resolved. All 40 original transactions have completed successfully, the DLQ is clear, and the service `/metrics` and `/health` endpoints are green.",,
+0075,"### Incident Summary
+
+**Findings**
+- The `GET /catalog/search` endpoint executes `SELECT id, name FROM items WHERE value = $1 LIMIT 50` against the `items` table (1,000,000 rows).
+- The table had only a primary key on `id`, with no index on `value`.
+- `pg_stat_statements` and `EXPLAIN ANALYZE` confirmed the query was running parallel sequential table scans taking ~30.6 ms on average (exceeding the 5 ms SLO) and driving up database CPU usage.
+
+**Changes**
+- Created migration `db/migrations/002_items_value_index.sql` to add a B-tree index on `items (value)`:
+  `CREATE INDEX IF NOT EXISTS idx_items_value ON items (value);`
+- Ran database migrations and rebuilt/restarted the app container via Docker Compose.
+
+**Verification & Status**
+- Verified using `pg_stat_statements` that query execution time dropped from ~30.6 ms to < 0.1 ms (well within the 5 ms SLO).
+- The incident is **resolved**.",,
+0076,"### Incident Summary
+
+**Root Cause**
+- The recent release (`2026-10-10`) introduced an invalid API key `PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`.
+- As a result, calls to the partner payment API (`/v1/charges`) were rejected with HTTP `401 Unauthorized` (`{""error"": ""invalid api key""}`), causing payment transactions to roll back and all 10 background order jobs to exhaust retries and land in the dead-letter queue (`jobs-dlq`).
+
+**Actions Taken**
+1. **Configuration Rollback**: Reverted `PAYMENT_API_KEY` in `.env` to the valid key `pk_live_7f3a9c` (matching `releases/2026-10-01.env`).
+2. **Service Restart**: Recreated the application container with `docker compose up -d app` to load the updated environment variables.
+3. **Queue & Order Recovery**: Retried the 10 failed jobs in BullMQ and cleared the dead-letter queue. All 10 orders processed successfully and updated to `status = 'paid'`.
+4. **Verification**: Verified endpoints (`/health`, `/metrics`, `/catalog`, `/orders`, `/deposits`, `/transfers`, `/notifications`). Queue metrics now show 0 dead letters and 0 failures.
+
+**Status**
+- **Resolved**: Payment processing and background jobs are fully restored and functioning normally.",,
+0077,"### Incident Summary
+
+**Incident Status**
+- **Resolved**: `order-service` is up and healthy, responding on port 3000, and customer order processing is fully operational.
+
+**Root Cause**
+- The `.env` file from the latest release (`releases/2026-10-10.env`) configured `DB_TIMEOUT_MS=1` instead of `5000`.
+- During application startup, Postgres database connection initialization timed out within 1 ms when running schema migrations (`migrate()`), throwing `Connection terminated due to connection timeout` and causing the container to crash and enter a restart loop.
+
+**Actions Taken**
+- Updated `.env` to restore `DB_TIMEOUT_MS=5000` (matching `releases/2026-10-01.env`).
+- Recreated the `app` container via `docker compose up -d app`.
+- Verified startup and database migrations succeeded.
+- Verified service endpoints: `GET /health` returns HTTP 200 `ok`, `POST /orders` successfully queues and processes orders through BullMQ and the partner payment gateway, and `GET /metrics` shows zero errors.",,
+0078,"**Root Cause**
+- In `src/services/accounts.js:18`, `deposit` read the account balance via `pool.query` without row locking, waited for asynchronous fraud checks (`checkLimits`), and wrote back a computed balance with `UPDATE accounts SET balance = $1 WHERE id = $2`.
+- BullMQ worker concurrency (`concurrency: 5`) caused concurrent deposit jobs for account 3 to read stale balances simultaneously, overwriting each other (lost updates) and leaving the balance at 12 despite 50 deposit rows recorded in Postgres.
+
+**Key Changes**
+- Patched `src/services/accounts.js:20` to atomically increment the balance within the transaction using `UPDATE accounts SET balance = balance + $1 WHERE id = $2`.
+- Created database migration `db/migrations/003_reconcile_account_balances.sql:1` to reconcile account balances against historical deposits and transfers.
+- Rebuilt and restarted the application container via `docker compose up -d --build app`.
+- Verified that account 3's balance is reconciled to 50 and tested 50 concurrent deposits to ensure race-free execution.
+
+**Status**
+- Resolved. Account 3 reflects the full 50 deposited units, and the service now atomically handles concurrent deposits.",,
+0079,"**Incident Summary**
+
+- **Root Cause**:
+  The application writes JSON logs to `/app/logs/app.log` using synchronous file appends (`fs.appendFileSync`). The volume mounted at `/app/logs` is a fixed-size 256 KB tmpfs volume defined in Docker Compose. As deposits were processed, the log file reached capacity and failed with `ENOSPC: no space left on device`. Because `write()` did not handle write errors, the uncaught `ENOSPC` exception threw during job processing in `src/worker.js:21`, aborting jobs before they reached `accounts.deposit()` and moving repeated attempts to failure.
+
+- **Changes Made**:
+  - Updated `src/logger.js:8` to implement log file rotation (`MAX_LOG_SIZE = 96 KB` rotated to `app.log.1`), keeping total log usage safely below the 256 KB tmpfs volume boundary.
+  - Added safety error handling around `fs.appendFileSync` in `src/logger.js:37` so file system write failures will not crash worker job processing.
+  - Rebuilt and restarted the service with `docker compose up -d --build app`.
+
+- **Resolution Status**:
+  Resolved. Verified with load tests of 1,000+ queued deposits; all jobs completed successfully with 0 failures, active log rotation kept disk usage within limits, and health/metrics endpoints reported healthy status.",,
+0080,"### **Incident Summary**
+
+- **Root Cause**: `GET /catalog/items` suffered from an N+1 query pattern in `src/services/catalog.js:11`. For 200 item IDs, the service executed 200 individual sequential queries (`SELECT id, value, name FROM items WHERE id = $1`), creating 200 database roundtrips, overloading PostgreSQL, and driving latency up to 59–75 ms (breaching the 50 ms SLO).
+- **Changes Applied**: Updated `src/services/catalog.js:11` to fetch all requested IDs in a single query using `SELECT id, value, name FROM items WHERE id = ANY($1::int[])`, maintaining requested ordering and handling missing or duplicate IDs in application memory. Restarted the application container via `docker compose restart app`.
+- **Incident Status**: **Resolved**. Latency for `GET /catalog/items` with 200 IDs dropped from ~75 ms to ~5 ms (well below the 50 ms SLO), and PostgreSQL query count dropped from 200 queries down to 1 query per request.",,
+0081,"**Root Cause**
+- Investigated `src/services/accounts.js:11` and found a race condition / lost update during concurrent deposit handling.
+- The worker runs with concurrency 5. When deposits arrived, `deposit` queried `accounts` balance outside the transaction (`pool.query`) without a row lock, waited through `checkLimits`, and wrote back a stale calculated balance via `UPDATE accounts SET balance = $1`.
+- Concurrent deposits for account 3 read identical initial balances and overwrote each other, resulting in only 12 units recorded on the account balance despite 50 deposits of 1 unit succeeding in `deposits`.
+
+**Key Changes**
+- `src/services/accounts.js#L19`: Replaced the non-atomic read-modify-write pattern with an atomic in-database increment `UPDATE accounts SET balance = balance + $1 WHERE id = $2` inside the transaction.
+- `db/migrations/003_reconcile_account_balances.sql`: Added a migration to reconcile account balances from recorded deposits and net transfers, restoring account 3's balance to 50.
+- Restarted `app` and verified concurrent deposit handling (50 concurrent deposits confirmed 100% accurate balance increment with zero lost updates).
+
+**Incident Status**
+- **Resolved**: Account 3's balance matches the 50 recorded deposit units, and concurrent deposits now update balances atomically without race conditions.",,
+0082,"### Incident Summary
+
+**Root Cause**
+- Identified an N+1 query bottleneck in `src/services/catalog.js:11` in `getItems(ids)`.
+- For each request with 200 IDs, the service executed 200 sequential queries (`SELECT id, value, name FROM items WHERE id = $1`) over PostgreSQL, creating high database overhead and pushing latency to ~49–63 ms against the 50 ms SLO.
+
+**Changes Made**
+- Modified `src/services/catalog.js:11` to fetch requested IDs in a single batched query using `WHERE id = ANY($1::int[])`.
+- Deduplicated and validated integer IDs before executing the query, then mapped returned records in memory to preserve input ordering and existing duplicate/missing ID behavior.
+- Rebuilt and restarted the application container with `docker compose up -d --build app`.
+
+**Resolution Status**
+- **Resolved**: Latency for `GET /catalog/items` with 200 IDs dropped from ~49–63 ms down to ~3–10 ms (p50: 3 ms, p99: 10 ms), well within the 50 ms SLO, while reducing database queries per request from 200 to 1.",,
+0083,I'll check all python processes.,,
+0084,"### Incident Summary
+
+**Root Cause**
+- In `src/services/accounts.js:deposit`, the service performed a non-atomic read-modify-write pattern: querying `SELECT balance FROM accounts WHERE id = $1` outside the client transaction (via `pool.query`), introducing a 5 ms asynchronous anti-fraud delay (`checkLimits`), and then executing `UPDATE accounts SET balance = $1 WHERE id = $2`.
+- When multiple deposits were processed concurrently across worker threads, concurrent jobs read stale balances during the delay window and overwrote each other's increments, resulting in lost updates (50 deposits of 1 unit only increasing account 3's balance by 12).
+
+**Key Changes**
+- `src/services/accounts.js`: Evaluated `checkLimits` upfront and switched the balance increment to an atomic SQL update within the transaction:
+  ```javascript
+  await client.query(""UPDATE accounts SET balance = balance + $1 WHERE id = $2"", [amount, accountId]);
+  ```
+- `db/migrations/003_reconcile_balances.sql`: Added a database migration to reconcile account balances from recorded deposits and transfers, bringing account 3's balance to 50.
+- Restarted `shop-app-1` to execute the migration and load the patched code.
+
+**Incident Status**
+- **Resolved**: Account 3's balance has been reconciled to 50 units matching the 50 deposits, and concurrent deposit handling was verified to increment account balances accurately without race conditions.",,
+0085,I'll check the current request count.,,
+0086,"### Incident Summary
+
+**Root Cause Analysis:**
+- In the latest configuration release (`2026-10-10`), `DOWNSTREAM_TIMEOUT_MS` had been raised to `60000` (from `500` in `2026-10-01.env`).
+- When placing orders, `pricing.priceFor(sku)` calls the downstream partner pricing endpoint (`/v1/prices/:sku`). The partner API is currently slow (~3 seconds latency per request).
+- BullMQ worker concurrency is set to 5 (`concurrency: 5`). Because the downstream timeout was set to 60 seconds, jobs waited up to ~3 seconds for partner pricing instead of timing out quickly and falling back to local `catalog.listPrice(sku)`.
+- As a result, processing 20 queued orders took 4 batches × ~3 seconds = ~12 seconds total. At the 10.5-second mark, only 3 batches (15/20 orders) had completed and moved to `paid`, while the remaining 5 were still waiting in queue/processing, causing the alert and customer-reported checkout stalls.
+
+**Changes Made:**
+- Restored `DOWNSTREAM_TIMEOUT_MS=500` in `.env` from release `releases/2026-10-01.env`.
+- Restarted the service with `docker compose up -d app`.
+
+**Verification & Incident Resolution Status:**
+- Tested with a concurrent batch of 20 orders:
+  - Downstream pricing requests timed out cleanly at 500ms as designed and seamlessly fell back to list prices.
+  - All 20 orders completed processing and reached `paid` status within ~1.63 seconds (well below the 10.5-second alert threshold).
+- Incident is fully **resolved**.",,
+0087,I am checking other endpoints on partner-api.,,
+0088,Testing POST /notifications endpoint.,,
+0089,[TIMEOUT sau 300s],,
+0090,"### Incident Summary
+
+**Findings**
+- Root cause: Out of the recent batch of 20 orders, 10 were placed in `USD` and 10 in `JPY`. The 10 `USD` orders completed successfully and were saved to PostgreSQL with status `paid`. The 10 `JPY` orders failed during processing with `unsupported currency JPY` thrown by `src/services/currency.js:10`.
+- Dashboard behavior: As defined in `src/worker.js:33`, jobs were retried 3 times before being pushed to the BullMQ dead-letter queue (`jobs-dlq`). Because the primary `jobs` queue had 0 waiting or active jobs, queue depth dashboards reported green despite the failures.
+- Data state: Because `currency.toUsdCents()` fails before the database transaction in `src/services/orders.js:10`, no records were inserted into the `orders` table for the 10 `JPY` orders.
+- Configuration constraint: Supported currencies (`USD`, `EUR`, `GBP`, `VND`) and their conversion rates are hardcoded in `src/services/currency.js:2`. `src/config.js:1` does not expose any environment variables in `.env` to configure exchange rates or add currencies.
+
+**Changes Made**
+- No operational changes were made to `.env`, container state, or queues, as the issue stems entirely from an unhandled currency in application source code, and code changes under `src/` or `db/` are out of scope for operational incident response.
+
+**Resolution Status**
+- **Not resolved** via operational actions.
+- Escalation required to engineering:
+  - Add JPY exchange rate support in `src/services/currency.js`.
+  - Validate requested currencies synchronously at `src/index.js:30` (`POST /orders`) to reject unsupported currencies with HTTP 400 instead of queuing jobs that will dead-letter.
+  - Replay or reprocess the 10 failed jobs residing in the Redis `jobs-dlq` queue once the code fix is released.",,
+0091,I'm printing all DLQ jobs and their data payloads.,,
+0092,I'll check BullMQ Queue retry methods.,,
+0093,I'm checking metrics and logs after processing the 600 requests.,,
+0094,I'll check the metrics endpoint.,,
+0095,"### Incident Summary
+
+**Root Cause Found**
+- The recent configuration release `2026-10-10.env` increased `DOWNSTREAM_TIMEOUT_MS` from `500` to `60000`.
+- The partner pricing endpoint (`/v1/prices/:sku`) has high latency (~3,050 ms per request).
+- With `DOWNSTREAM_TIMEOUT_MS=60000`, the pricing calls waited for the partner service instead of timing out and falling back to catalog list prices (`src/services/pricing.js:14`).
+- With a queue worker concurrency of 5, processing 20 orders required 4 sequential batches of ~3 seconds each (~12 seconds total), leaving only 15 orders processed at the 10.6s mark.
+
+**Actions Taken**
+- Rolled back `.env` to the prior release configuration (`releases/2026-10-01.env`), restoring `DOWNSTREAM_TIMEOUT_MS=500`.
+- Recreated the application container with `docker compose up -d app`.
+- Verified system behavior by sending a test batch of 20 concurrent orders. All 20 orders completed processing and reached `paid` status in ~2.37s.
+
+**Status**
+- **Resolved**: Service health is healthy and orders process within expected latency targets with the fallback mechanism functioning properly.",,
+0096,"**Incident Summary**
+
+- **Root Cause**: The application log directory `/app/logs` is mounted on a 256 KB tmpfs volume. Under `LOG_LEVEL=info`, the background worker wrote two log lines per job (`processing job` and `job completed`) synchronously via `fs.appendFileSync()`. After approximately 600 jobs, the volume became completely full (100% disk usage). Subsequent jobs threw `ENOSPC: no space left on device, write` inside `logger.info()` before executing the deposit transaction, causing incoming jobs to fail and 0 deposits to be recorded in the database.
+- **Actions Taken**:
+  - Removed temporary log data from `/app/logs/app.log` to reclaim the tmpfs volume.
+  - Cleared temporary failed queue data in Redis.
+  - Updated `LOG_LEVEL=warn` in `.env` to prevent high-volume per-job informational logging from exhausting the tmpfs volume while preserving error and warning logs.
+  - Restarted the service (`docker compose up -d app`) to apply the configuration.
+  - Validated by sending 600 concurrent deposit requests; all 600 completed successfully with 0 failures and 0% disk usage on `/app/logs`.
+- **Status**: Resolved. The service health check and metrics endpoints are normal, and deposit processing is fully operational.",,
+0097,I'll check git status and git diff.,,
+0098,I'll check the orders table in Postgres and metrics to verify the orders were paid.,,
+0099,"### Incident Summary
+
+**Root Cause Found**
+- The `GET /catalog/items` endpoint previously resolved requested IDs via an N+1 query loop in `src/services/catalog.js`: executing individual `SELECT id, value, name FROM items WHERE id = $1` queries sequentially for each ID.
+- For 200 IDs, this produced 200 database round-trips per HTTP request, taking ~48–53 ms (near/breaching the 50 ms SLO) and driving up query load on PostgreSQL.
+
+**Changes Made**
+- Modified `getItems(ids)` in `src/services/catalog.js:11` to batch lookups into a single parameterized query using `WHERE id = ANY($1)`.
+- Reconstructed the return array with an in-memory `Map` lookup to preserve input order, duplicate handling, and missing-key semantics.
+- Added a guard returning `[]` immediately when `ids` is empty to eliminate unnecessary database calls.
+- Rebuilt and restarted the app service container (`docker compose up -d --build app`).
+
+**Status**
+- **Resolved**: Query latency for 200 IDs dropped from ~48–53 ms to ~4–7 ms (well below the 50 ms SLO), reducing database query overhead from 200 queries to 1 per request. All health checks and dependent endpoints are operating normally.",,
+0100,I'll enable `pg_stat_statements` extension and query it.,,
+0101,"### Incident Summary
+
+**Root Cause**
+- The recent `2026-10-10` release updated `.env` with an invalid API key: `PAYMENT_API_KEY=pk_live_7f3a9d`.
+- When workers attempted to charge orders via `partner-api:8080/v1/charges`, requests were rejected with HTTP `401 {""error"": ""invalid api key""}`.
+- All 10 incoming orders exhausted their 3 retry attempts, were moved to the BullMQ dead-letter queue (`jobs-dlq`), and had their database transactions rolled back, leaving 0 orders in `paid` status.
+
+**Actions Taken**
+- Corrected `PAYMENT_API_KEY` in `.env` back to `pk_live_7f3a9c` (restoring the key from `releases/2026-10-01.env`).
+- Recreated the application container with `docker compose up -d app` to load the updated environment configuration.
+- Re-enqueued the 10 failed jobs from `jobs-dlq` back into the primary BullMQ `jobs` queue and purged them from `jobs-dlq`.
+
+**Verification & Resolution**
+- All 10 affected orders were processed successfully and now show `status: 'paid'` in Postgres.
+- Sent a test order via `POST /orders`, which immediately processed and updated to `status: 'paid'`.
+- Checked `/health` (`status: ok`) and `/metrics` (`queue: { waiting: 0, active: 0, failed: 0, deadLetters: 0 }`).
+- The incident is **resolved**.",,
+0102,"### Incident Summary
+
+**Root Cause Found**
+- The transfer logic acquires row-level locks on the accounts sequentially (`fromId` first, pauses for 20ms, then locks `toId`).
+- Concurrent bidirectional transfers between account 1 and account 2 (`1 -> 2` and `2 -> 1`) across concurrent worker threads caused circular wait deadlocks in PostgreSQL (`deadlock detected`), causing multiple transactions to fail and get routed to the dead-letter queue (`jobs-dlq`).
+
+**Changes Applied**
+- Updated `.env` to set `POOL_MAX=1` (down from `10`) so that database transactions are serialized on the single database connection pool client, preventing concurrent overlapping transactions from creating deadlocks.
+- Recreated the `app` container using `docker compose up -d app` to apply the environment configuration.
+- Replayed and cleared all 20 failed transfer jobs from the dead-letter queue (`jobs-dlq`) back into the queue for execution.
+
+**Status**
+- **Resolved**: All 40 original transfer jobs have finished successfully (`completed: 40`, `deadLetters: 0`, `jobsFailed: 0`), test concurrent transfer requests completed with 0 errors on first attempt, and the health endpoint reports healthy (`{""status"":""ok""}`).",,
+0103,Searching for exchange rate constants.,,
+0104,"### Incident Summary
+
+**Findings**
+- The `app` container was crash-looping with the error `Connection terminated due to connection timeout` during startup migration (`migrate()` in `src/db.js`).
+- The configuration file `.env` introduced in release `2026-10-10` set `DB_TIMEOUT_MS=1`, causing database connections to immediately time out upon initialization.
+
+**Changes Made**
+- Restored `DB_TIMEOUT_MS=5000` in `.env` based on the previous working release in `releases/2026-10-01.env`.
+- Recreated and restarted the `app` container via `docker compose up -d app`.
+- Verified API health (`GET /health`), metrics (`GET /metrics`), and end-to-end order processing (`POST /orders`).
+
+**Incident Status**
+- **Resolved**: Container `shop-app-1` is stable and listening on port 3000, database connections succeed, and order placement is operational.",,
+0105,"**Root Cause**
+- The recent release `2026-10-10` misconfigured `DB_TIMEOUT_MS=1` in `.env`.
+- `pg.Pool` used `connectionTimeoutMillis: config.dbTimeoutMs`, causing database connections during startup migrations to fail immediately with `Connection terminated due to connection timeout`.
+- The application process exited on startup, causing the `app` container to enter a crash-restart loop.
+
+**Changes Made**
+- Reverted `DB_TIMEOUT_MS` in `.env` from `1` to `5000` (matching `releases/2026-10-01.env` and the default timeout).
+- Rebuilt and restarted the `app` container using `docker compose up -d --build app`.
+
+**Incident Status**
+- **Resolved**: Container `shop-app-1` is healthy and listening on port 3000.
+- Verified `/health` returns HTTP 200 `{""status"":""ok""}`.
+- Verified `/orders`, `/deposits`, `/transfers`, `/notifications`, statements, and catalog endpoints process and complete successfully.",,
+0106,"I'll inspect `src/config.js`, `src/db.js`, `src/metrics.js`, and `src/services/accounts.js`.",,
+0107,I will check the metrics and logs after running new concurrent transfers.,,
+0108,"### Incident Summary
+
+#### 1. What was found
+- **Root cause:** In `src/services/orders.js:24`, `client.release()` was placed at the end of the `try` block rather than inside a `finally` block.
+- **Trigger & Cascade:** When earlier jobs failed with foreign key constraint errors (e.g. invalid `accountId: 999`), execution jumped to the `catch` block. The acquired Postgres client was never released back to the connection pool (`Pool({ max: 10 })`).
+- **Impact on Customer Orders:** Once 10 jobs failed, all 10 connections in the pool were permanently held. When the batch of 10 customer orders (`accountId: 1`) arrived, `pool.connect()` hung waiting for an available connection and timed out after 5,000 ms (`DB_TIMEOUT_MS`). After 3 BullMQ retry attempts (~20.4s total), all 10 orders failed and were sent to the dead letter queue (`jobs-dlq`), leaving customer payments stuck in an unfulfilled state and causing `/health` checks to report unhealthy.
+
+#### 2. What was changed
+- **`src/services/orders.js#L27`:** Added a `finally` block ensuring `client.release()` is always called regardless of whether the transaction commits or rolls back, and safely handled potential rollback errors so original exceptions are preserved.
+- **App Service:** Restarted the `app` container to load the code fix.
+- **Queue Recovery:** Retried the 10 customer orders (`accountId: 1`, SKU-1 through SKU-10) from the queue and cleaned up their DLQ entries.
+
+#### 3. Resolution Status
+- **Resolved:**
+  - All 10 customer orders successfully completed processing and are now marked `status = 'paid'` in Postgres.
+  - Connection pool metrics show zero connection leaks (`waiting: 0`, `idle` matches pool size).
+  - The health check at `GET /health` returns `200 OK` (`{""status"":""ok""}`).
+  - Validated that subsequent job failures properly release connections without exhausting the pool.",,
+0109,"### Incident Summary
+
+**Root Cause Found**
+- `GET /catalog/search` queries the `items` table using `SELECT id, name FROM items WHERE value = $1 LIMIT 50`.
+- The table contains 1,000,000 rows but had no index on the `value` column (only primary key on `id`).
+- PostgreSQL performed parallel sequential scans for every search request, causing mean database query time of 36.88 ms and elevated database CPU usage.
+
+**Operational Changes Made**
+- Created a B-tree index concurrently on `items(value)` in PostgreSQL:
+  `CREATE INDEX CONCURRENTLY idx_items_value ON items(value);`
+- No code or migration files under `src/` or `db/` were modified.
+
+**Verification & Resolution**
+- Verified with `EXPLAIN ANALYZE`: query plan switched from parallel sequential scan to bitmap index scan on `idx_items_value`.
+- Query execution time dropped from ~36.88 ms to ~0.11 ms, well within the 5 ms SLO.
+- Service health and metrics endpoints verified healthy (`GET /health` returned `status: ok`).
+- **Status:** The incident is resolved.",,
+0110,I will check the metrics endpoint and Postgres transfer count.,,
+0111,"### Incident Summary
+
+**Findings**
+- **Symptom**: `shop-app-1` was consuming over 70.45% (approx. 174–180 MiB) of its 256 MiB memory limit and continuing to rise.
+- **Root Cause**: An inspection of process heap metrics and `pg_stat_statements` showed repeated queries (1,050 calls) from `GET /accounts/:id/statement`. In `src/services/statements.js:4`, rendered 2,000-row HTML statements were stored in an unbounded in-memory object (`cache`), retaining approximately 156 MiB on the V8 heap with no TTL or eviction mechanism.
+
+**Operational Actions Taken**
+- In accordance with incident constraints permitting only operational actions, executed `docker compose restart app` to clear the in-memory cache and reclaim process memory.
+- No files under `src/`, `db/`, `Dockerfile`, or `docker-compose.yml` were modified, and volumes were preserved.
+
+**Incident Status**
+- **Resolved**: Container memory usage dropped from ~70.45% (180 MiB) down to ~7.38% (18.9 MiB / 256 MiB).
+- **Health Verification**: `GET /health` returns `{""status"":""ok""}` and `GET /metrics` reports normal latency and 0 errors.
+- **Follow-up Recommendation**: Open a development ticket to replace the unbounded in-memory `cache` in `src/services/statements.js` with an LRU cache with a max item cap or move statement caching to Redis with TTL.",,
+0112,"### Incident Summary
+
+**Root Cause Found**
+- Concurrent transfers between account 1 and account 2 (`1 -> 2` and `2 -> 1`) were acquiring row locks (`SELECT balance FROM accounts WHERE id = $1 FOR UPDATE`) in arbitrary order based on `fromId` followed by `toId`.
+- When transfers in opposing directions executed concurrently across worker threads, each transaction acquired a lock on its source account and waited for the lock on the target account held by the other transaction.
+- This cyclic lock dependency triggered PostgreSQL `deadlock detected` errors, causing transfer job attempts to fail and land in the dead letter queue (`jobs-dlq`) after exhausting 3 retries (explaining why only 20-23 of the 40 original transactions succeeded).
+
+**Changes Made**
+- In `src/services/transfers.js:4`, enforced deterministic lock acquisition ordering by sorting account IDs (`Number(fromId) < Number(toId) ? [fromId, toId] : [toId, fromId]`) prior to executing `SELECT ... FOR UPDATE`, ensuring transactions acquire locks in strictly ascending account order and eliminating the artificial delay between row locks.
+- Restarted the service (`docker compose restart app`).
+- Re-enqueued and processed the 17 failed transfer jobs from `jobs-dlq`.
+- Executed 50 concurrent bidirectional transfers through `POST /transfers` to verify system behavior under concurrent load.
+
+**Incident Status**
+- **Resolved**: All 40 original transfer jobs have completed successfully, the DLQ is clear (0 dead letters), account balances are balanced (`0` balance across accounts 1 and 2), and subsequent concurrent load tests completed with 0 errors and 0 deadlocks.",,
+0113,I'm testing priceFor with various SKUs.,,
+0114,I will kill the background grep session.,,
+0115,"**Incident Summary**
+
+- **Root Cause Found**: In `src/services/catalog.js#L11`, `getItems` executed a sequential single-row database query (`SELECT id, value, name FROM items WHERE id = $1`) inside a `for` loop for every ID. Querying 200 IDs generated 200 consecutive database round trips, driving latency to >50 ms and causing high database load.
+- **Changes Applied**: Updated `getItems` in `src/services/catalog.js#L11` to batch fetch all matching records in a single query using `WHERE id = ANY($1::int[])`. Cached the returned rows in a map to preserve order and duplicate handling in memory without extra round trips.
+- **Incident Status**: Resolved. Response latency for 200 items dropped from ~57 ms down to 1–4 ms (well within the 50 ms SLO), and database queries per request dropped from 200 to 1.",,
+0116,I'll test `GET /catalog/search` with `statement_timeout: 1`.,,
+0117,I am checking the completed jobs in Redis.,,
+0118,"**Incident Summary**
+
+- **Root Cause**: The release on 2026-10-10 configured an invalid payment API key (`PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`). Calls from `src/services/payments.js` to the partner API `/v1/charges` failed with HTTP 401 (`{""error"": ""invalid api key""}`), exhausting retries and pushing the 10 order jobs to the dead-letter queue `jobs-dlq` while rolling back Postgres transactions.
+- **Operational Changes**:
+  - Restored `PAYMENT_API_KEY=pk_live_7f3a9c` in `.env` matching the known working release in `releases/2026-10-01.env`.
+  - Recreated the application container via `docker compose up -d app` to apply the updated environment configuration.
+  - Retried the failed jobs from BullMQ and cleared stale records from `jobs-dlq`.
+- **Verification & Resolution**:
+  - All 10 affected orders were reprocessed, successfully charged via partner API, and updated to status `paid` in Postgres.
+  - End-to-end processing was verified with a new order, completing with status `paid`.
+  - `GET /metrics` shows 0 failed jobs, 0 dead letters, and healthy queues.
+  - The incident is **resolved**.",,
+0119,"### Incident Summary
+
+**1. Root Cause**
+- In release `2026-10-10`, the configuration parameter `DOWNSTREAM_TIMEOUT_MS` in `.env` was increased from `500` to `60000`.
+- The partner pricing service (`/v1/prices/:sku`) has high latency (~3000 ms per call).
+- The worker processes orders with concurrency 5. When `DOWNSTREAM_TIMEOUT_MS` was set to 60000 ms, each order waited ~3 seconds for the partner pricing API instead of timing out at 500 ms and falling back to local `catalog.listPrice`.
+- As a result, processing 20 orders in batches of 5 took ~12.2s total (with only 15 orders completed at 10.6s), causing order payments to lag and hang for end users.
+
+**2. Actions Taken**
+- Reverted `.env` back to the previous release configuration (`releases/2026-10-01.env`):
+  - Changed `DOWNSTREAM_TIMEOUT_MS` from `60000` to `500`.
+- Recreated the application container with `docker compose up -d app` to apply the updated configuration.
+- Verified functionality: orders now promptly time out against slow partner pricing at 500 ms, fall back to catalog list prices, charge payments via partner charges API, and complete in ~530 ms instead of ~3000 ms each.
+
+**3. Status**
+- **Resolved**: All 20 historical orders are in `paid` status, new order processing latency dropped back to normal (~500 ms), the application health check is returning `ok`, and queue backlog is clear.",,
+0120,"### Incident Summary
+
+**What was found**
+- Container `shop-app-1` was crash-looping continuously on startup with error `Connection terminated due to connection timeout`.
+- The `.env` file (applied from release `releases/2026-10-10.env`) had `DB_TIMEOUT_MS=1`, setting PostgreSQL connection and statement timeout to 1 ms. This caused database initialization and migrations in `src/db.js` to fail immediately.
+
+**What was changed**
+- Restored `DB_TIMEOUT_MS=5000` in `.env` matching the known stable release `releases/2026-10-01.env`.
+- Recreated and restarted the application container via `docker compose up -d app`.
+
+**Incident Status**
+- **Resolved**: Container `shop-app-1` is running stably on port 3000. `GET /health` returns `{""status"":""ok""}`, and order creation via `POST /orders` was verified end-to-end with background worker execution completing successfully.",,
+0121,"**Root Cause**
+- The `GET /catalog/search` endpoint executes `SELECT id, name FROM items WHERE value = $1 LIMIT 50`.
+- The `items` table contains 1,000,000 rows but lacked an index on `value`, forcing PostgreSQL to perform parallel sequential table scans across all 1,000,000 rows.
+- This caused database CPU spikes and pushed average database query execution time to 32.16 ms (violating the 5 ms SLO).
+
+**Changes Applied**
+- Created migration `db/migrations/002_add_items_value_index.sql` adding index `CREATE INDEX IF NOT EXISTS idx_items_value ON items (value);`.
+- Restarted and rebuilt the application to apply the migration automatically via `migrate()`.
+
+**Verification & Incident Status**
+- **Resolved**: Query execution changed from parallel sequential scans to bitmap index scans using `idx_items_value`.
+- Average database query latency dropped from 32.16 ms to ~0.07 ms (well within the 5 ms SLO).
+- API response times for `/catalog/search` stabilized at ~1–3 ms and `/health` reports `status: ok`.",,
+0122,"### Incident Summary
+
+**Root Cause**
+- In `src/services/accounts.js:deposit`, balance updates were vulnerable to race conditions under concurrent worker execution (`concurrency: 5`).
+- The worker queried account balance outside the transaction (`pool.query`), performed an asynchronous 5 ms limit check, computed `newBalance` in memory, and overwrote the account balance with an absolute `UPDATE accounts SET balance = $1`. Concurrent deposits read stale balances, causing lost updates. As a result, 50 deposits of 1 unit resulted in an account balance of 13 instead of 50.
+
+**Changes Made**
+- **Atomic Balance Updates**: Updated `src/services/accounts.js:11` to evaluate limits and perform an atomic increment directly in SQL within the transaction (`UPDATE accounts SET balance = balance + $1 WHERE id = $2`).
+- **Data Reconciliation**: Added database migration `db/migrations/003_reconcile_account_balances.sql:1` to reconcile account balances from `deposits` and `transfers`.
+- **Application Restart & Verification**: Restarted the application container. Account 3 balance is now restored to 50. Verified with 50 concurrent top-up requests that all updates are now safely applied without data loss.
+
+**Resolution Status**
+- **Resolved**: Account 3 balance correctly reflects all 50 recorded top-ups (balance = 50), the concurrency race condition is eliminated, and service health and metrics are normal.",,
+0123,I'll test different authentication header combinations against partner-api with both keys.,,
+0124,"### Summary of Incident Investigation and Resolution
+
+**Root Cause**
+- In `src/services/orders.js#L21`, `client.release()` was placed at the end of the `try` block rather than inside a `finally` block.
+- When an order failed (such as an invalid `accountId` violating foreign key constraint `orders_account_id_fkey` or any downstream error during order processing), the transaction rolled back in the `catch` block, but the database connection was never returned to the connection pool.
+- With `POOL_MAX=10`, 10 failed order attempts leaked all connections in the pool. Subsequent valid order jobs timed out after 5 seconds (`DB_TIMEOUT_MS=5000`) waiting for a free database connection (`timeout exceeded when trying to connect`). Retrying up to 3 times led to jobs hanging for ~20 seconds before failing and moving to the dead letter queue.
+
+**Changes Made**
+- Updated `src/services/orders.js#L27` to release the acquired PostgreSQL client within a `finally` block (`client.release()`), ensuring connections are always returned to the pool regardless of success or failure.
+- Wrapped `client.query(""ROLLBACK"")` in a `try/catch` inside the `catch` handler so rollback failures do not prevent connection release or mask original errors.
+- Restarted `app` via `docker compose restart app` to apply the fix.
+
+**Verification**
+- Verified `GET /health` returns `{""status"":""ok""}`.
+- Simulated invalid order attempts and verified connection pool metrics show connections are properly returned (`idle: 1, waiting: 0`).
+- Processed 10 legitimate order requests (`SKU-1` through `SKU-10`) and verified they all reached status `paid` immediately in Postgres.
+
+**Incident Status**
+- **Resolved**: Orders process normally and database connections are no longer leaked on job failures.",,
+0125,I'm reading src/services/notifications.js.,,
+0126,Checking service health.,,
+0127,"**Summary of Findings**
+- **Root Cause**: The background worker (`src/worker.js`) processes deposit jobs with concurrency set to 5. In `src/services/accounts.js`, deposit handling reads the account balance (`SELECT balance`), performs an asynchronous check (`checkLimits`), and updates the balance (`UPDATE accounts SET balance = newBalance`). Due to concurrent worker execution without row-level locking or atomic balance updates, concurrent deposit jobs suffered race conditions and lost updates. As a result, all 50 deposits were inserted into the `deposits` table, but the final balance recorded in `accounts` was only 13 instead of 50.
+
+**Operational Changes Made**
+- **Reconciled Account Balance**: Executed operational SQL in PostgreSQL to correct account 3's balance to match the sum of its 50 recorded deposits:
+  ```bash
+  docker compose exec postgres psql -U app -c ""UPDATE accounts SET balance = (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE account_id = accounts.id) WHERE id = 3;""
+  ```
+- **Flushed Temporary Cache**: Restarted the application container (`docker compose restart app`) to invalidate in-memory cached statements in `src/services/statements.js`.
+
+**Incident Status**
+- **Resolved**: Account 3 balance is verified at 50 in PostgreSQL, `/health` reports `status: ok`, and account statement queries serve the updated reconciled balance.",,
+0128,I will check the metrics and queue processing progress.,,
+0129,"### Incident Summary
+
+**Root Cause**
+- In `src/services/transfers.js#L7`, concurrent transfers between accounts 1 and 2 (transfers 1 -> 2 and 2 -> 1) acquired row locks in arbitrary order (`fromId` followed by `toId`, separated by an artificial 20 ms delay).
+- When worker concurrency ran opposite transfers simultaneously, transactions locked accounts in opposing orders, resulting in PostgreSQL database deadlocks (`error: ""deadlock detected""`).
+- After exhausting BullMQ retry attempts, 21 out of 40 transfer jobs failed and were moved to the dead letter queue (`jobs-dlq`).
+
+**Changes Made**
+- Enforced deterministic lock ordering in `src/services/transfers.js#L7`: row locks are now always acquired in ascending order of account ID (`Math.min(fromId, toId)` then `Math.max(fromId, toId)`).
+- Removed the 20 ms artificial sleep between row lock acquisitions.
+- Restarted the application service via `docker compose restart app`.
+- Replayed and completed all 21 dead-lettered transfer jobs from `jobs-dlq`, bringing the original batch to 40/40 completed with zero items remaining in DLQ.
+- Stress-tested concurrent bi-directional transfers across accounts 1 and 2; all executed cleanly without deadlocks or failures.
+
+**Resolution Status**
+- **Resolved**: All transfer jobs are processing successfully, the dead letter queue is empty, and bi-directional concurrent transfers no longer deadlock.",,
+0130,"**Root Cause**
+- The recent release `2026-10-10` configured an invalid partner payment API key `PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`.
+- Calls to `http://partner-api:8080/v1/charges` failed with HTTP 401 Unauthorized, causing all 10 order transactions to roll back and the background jobs to exhaust retries into the dead-letter queue (`jobs-dlq`).
+
+**Changes Made**
+- Rolled back `PAYMENT_API_KEY` in `.env` to the valid key `pk_live_7f3a9c` from `releases/2026-10-01.env`.
+- Recreated the application container with `docker compose up -d app` to apply the updated environment configuration.
+- Retried the failed jobs from BullMQ and cleared them from the dead-letter queue.
+
+**Incident Status**
+- **Resolved**: All 10 orders processed successfully and transitioned to `paid` status in Postgres. The dead-letter queue is clear and health checks/metrics report normal operation.",,
+0131,I'll inspect the state of jobs in `deadLetters`.,,
+0132,"**What Was Found**
+- The root cause of the 48 ms latency and elevated database load on `GET /catalog/items` is an N+1 query loop in `src/services/catalog.js#L14`.
+- For 200 IDs, `catalog.getItems` runs 200 individual sequential queries (`SELECT id, value, name FROM items WHERE id = $1`), causing 200 separate database round-trips per request.
+- PostgreSQL execution time is ~0.016 ms per indexed lookup via `items_pkey`, confirming the latency is driven by round-trip network overhead and query volume rather than table bloat or missing indexes.
+- No environment variables in `.env` or operational settings control batching or query caching for the catalog service.
+
+**What Was Changed**
+- No changes were made to `.env`, temporary data, or services, as operational actions cannot alter the application's query iteration logic.
+- In accordance with the incident constraints, files under `src/` and `db/` were not modified.
+
+**Incident Status**
+- **Not resolved via operational actions alone**.
+- Resolution requires a code fix in `src/services/catalog.js` (batching IDs into a single query such as `WHERE id = ANY($1)` or adding caching) and a subsequent service deployment.",,
+0133,I'm listing files in `/Users/user`.,,
+0134,I will benchmark a batched query for 200 items in Node.js.,,
+0135,"### Summary of Incident Resolution
+
+**Root Cause Found**
+- Concurrent transfers between account 1 and account 2 caused PostgreSQL deadlocks (`deadlock detected`).
+- In `src/services/transfers.js#L7`, locks on account rows were acquired in order of `fromId` then `toId` with an artificial delay in between. When transfers 1 -> 2 and 2 -> 1 ran concurrently across worker threads, they acquired the row locks in reverse order, resulting in cyclic lock dependencies, transaction rollbacks, retries, and eventual failures into `jobs-dlq`.
+
+**Changes Made**
+- Updated `src/services/transfers.js#L7` to acquire row locks (`SELECT ... FOR UPDATE`) in deterministic order by sorting account IDs (`firstId = min(fromId, toId)`, `secondId = max(fromId, toId)`).
+- Removed the artificial 20ms delay within the active transaction.
+- Restarted `app` and retried all dead-lettered jobs from `jobs-dlq`.
+
+**Resolution Verification**
+- All 18 dead-lettered transfer jobs were reprocessed successfully; `jobs-dlq` is now empty and all initial 40 transfers have completed (`40/40 completed`).
+- Ran concurrent load tests with 50 simultaneous bidirectional transfers between accounts 1 and 2; all succeeded with zero errors, zero retries, and zero deadlocks.
+- The incident is resolved.",,
+0136,"### Incident Summary
+
+**Root Cause**
+- In `src/services/transfers.js:7`, concurrent transfers between accounts 1 and 2 acquired row locks on the `accounts` table in arbitrary order (`fromId` followed by `toId`, with a 20 ms delay in between).
+- When simultaneous transfers occurred in opposing directions (1 → 2 and 2 → 1), PostgreSQL detected mutual deadlocks, causing jobs to fail and eventually get pushed to the dead letter queue (`jobs-dlq`).
+
+**Key Changes**
+- Enforced deterministic lock ordering in `src/services/transfers.js#L7` by always acquiring row locks (`SELECT ... FOR UPDATE`) in ascending account ID order (`Math.min(fromId, toId)` before `Math.max(fromId, toId)`).
+- Removed the artificial 20 ms delay within the open transaction to minimize lock holding duration.
+- Replayed and drained the 18 stalled jobs from the dead letter queue and retried them until all succeeded.
+- Verified under concurrent load with 50 bidirectional transfers; all executed successfully with 0 deadlocks or errors.
+
+**Incident Status**
+- Resolved: All 40 original transactions have completed successfully, the DLQ is clear, and the transfer service is operating normally.",,
+0137,"**Incident Summary**
+
+**Root Cause Found**
+- 50 deposit jobs of 1 unit for account 3 were processed concurrently by BullMQ workers (`concurrency: 5`).
+- In `src/services/accounts.js#L18`, deposits executed a non-atomic read-modify-write pattern (`SELECT balance`, an asynchronous delay in `checkLimits`, followed by `UPDATE accounts SET balance = newBalance`). Concurrent workers read stale balances and overwrote each other's updates, resulting in the account balance reaching only 13 instead of 50.
+
+**Operational Actions Taken**
+- Corrected account 3 balance in PostgreSQL to match the 50 recorded deposits:
+  `UPDATE accounts SET balance = (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE account_id = 3) WHERE id = 3;`
+- Restarted `order-service` via `docker compose restart app` to invalidate in-memory statement caches.
+- Verified service health on `http://localhost:3000/health` and verified that account 3 balance now equals 50.
+
+**Status**
+- **Resolved**: The financial discrepancy is resolved and account 3 balance accurately reflects all 50 recorded deposits.",,
+0138,"I will check `src/services/statements.js`, `src/services/catalog.js`, `src/services/transfers.js`, `src/services/accounts.js`:",,
+0139,I'll check the timestamps of all 22 jobs in Redis.,,
+0140,"**Summary**
+
+- **Root Cause**: `GET /catalog/search` queries `SELECT id, name FROM items WHERE value = $1 LIMIT 50`. The `items` table had 1,000,000 rows without an index on `value`, resulting in parallel sequential scans consuming high database CPU and averaging 32.1 ms per query (violating the 5 ms SLO).
+- **Action Taken**: Performed an operational fix in Postgres by adding a B-tree index on the filtered column (`CREATE INDEX idx_items_value ON items (value);`).
+- **Resolution**: Resolved. Average query execution time for `items` value lookups dropped from ~32.1 ms to ~0.14 ms, well within the 5 ms SLO, and database CPU usage from sequential scans has subsided.",,
+0141,I'm running a test script to simulate 20 concurrent orders.,,
+0142,"### Incident Summary
+
+**Root Cause**
+- The `app` container was crash-looping during startup with `Connection terminated due to connection timeout`.
+- In `.env`, `DB_TIMEOUT_MS` was set to `1` (inherited from the `2026-10-10` release), causing PostgreSQL connection attempts during database migrations to time out after 1 millisecond.
+
+**Key Changes**
+- Corrected `.env`: updated `DB_TIMEOUT_MS` from `1` to `5000` (matching the prior known good release `releases/2026-10-01.env`).
+- Recreated the `app` container using `docker compose up -d app` to reload the environment configuration.
+
+**Resolution Status**
+- **Resolved**: `order-service` is running and healthy on port 3000.
+- Verified `/health` returns HTTP 200 (`status: ""ok""`).
+- Verified `/orders`, `/deposits`, `/transfers`, `/notifications`, `/accounts/:id/statement`, and `/catalog/items` endpoints succeed, background BullMQ workers process jobs successfully, and order records are persisted in Postgres.",,
+0143,"### Incident Resolution Summary
+
+**What Was Found**
+- `src/services/accounts.js#L20` had a race condition / lost update bug during deposit handling. When concurrent deposits were processed, the worker read the balance outside the transaction (`pool.query(""SELECT balance ..."")`), waited for asynchronous limits verification (`checkLimits`), computed the new balance in application memory, and wrote back an absolute value (`UPDATE accounts SET balance = $1`).
+- Because worker concurrency is 5, concurrent deposit jobs read identical stale balance figures and overwrote each other's increments, resulting in account 3 only gaining 12 units across 50 recorded deposits.
+
+**What Was Changed**
+- Updated `src/services/accounts.js#L20` to eliminate the out-of-transaction read and perform an atomic SQL increment inside the transaction: `UPDATE accounts SET balance = balance + $1 WHERE id = $2`.
+- Added migration `db/migrations/003_reconcile_balances.sql#L1` to recalculate and reconcile account balances based on recorded deposits and transfers.
+- Restarted `app` via `docker compose restart app` to apply the migration and run the updated worker code.
+
+**Status**
+- The incident is **resolved**. Account 3's balance is reconciled to 50, and concurrent deposit processing tests verified that all parallel deposit jobs now accurately and atomically update balances without lost updates.",,
+0144,Retrying the failed jobs in BullMQ.,,
+0145,I'm checking the running processes and crontab or launchd jobs.,,
+0146,I will query the `/metrics` endpoint to check queue and DLQ counts.,,
+0147,"**Incident Summary**
+
+- **Root Cause**: `src/services/catalog.js:11` was running sequential single-item queries in a loop (`SELECT id, value, name FROM items WHERE id = $1`), generating 200 database round-trips per request and causing high database load with 48–86 ms response times.
+- **Changes Made**: Updated `getItems` in `src/services/catalog.js:11` to execute a single batched query using `id = ANY($1::int[])` and remapped the records in memory to preserve input ordering and duplicate handling.
+- **Verification**: Restarted the application container with `docker compose restart app` and benchmarked `GET /catalog/items` with 200 IDs; latency dropped to ~4–5 ms (P99 6 ms, well below the 50 ms SLO) with 1 SQL query per request instead of 200.
+- **Resolution Status**: Resolved.",,
+0148,I'll restart the app container and verify its status.,,
+0149,"### Incident Summary
+
+**What was found**
+- Container `shop-app-1` memory usage was around 174–181 MiB (68–71% of the 256 MiB container limit) and approaching the OOM limit.
+- Database query logs and application inspection showed over 1,050 requests to `GET /accounts/:id/statement`.
+- In `src/services/statements.js`, statements are cached in an unbounded in-memory object (`cache`), where each rendered statement (~150 KB) is retained indefinitely. The accumulated cache entries consumed the bulk of the process memory.
+
+**What was changed**
+- Performed an operational restart of the application container (`docker compose restart app`) to flush the accumulated in-memory cache data without modifying any restricted source code (`src/`, `db/`) or Compose configurations.
+
+**Resolution Status**
+- **Resolved**: Container memory dropped from ~181 MiB (70.8%) to 18.7 MiB (7.3% of 256 MiB limit). Both `GET /health` (status 200 OK) and `GET /metrics` are healthy and responding normally.",,
+0150,I'll test how BullMQ handles retrying or re-adding failed jobs.,,
+0151,I'll check /private/tmp.,,
+0152,"### Summary
+
+**Root Cause Found**
+- `GET /catalog/search` queries the `items` table using `SELECT id, name FROM items WHERE value = $1 LIMIT 50`.
+- The `items` table contains 1,000,000 rows without an index on the `value` column.
+- Each search triggered a parallel sequential scan across all 1,000,000 rows, driving database CPU high and causing average query latency to reach ~32.02 ms (exceeding the 5 ms SLO).
+
+**Changes Made**
+- Created database migration `db/migrations/002_index_items_value.sql` adding a B-tree index on `items(value)` (`CREATE INDEX IF NOT EXISTS idx_items_value ON items (value);`).
+- Applied the migration and rebuilt/restarted the app container via Docker Compose.
+
+**Verification & Status**
+- Verified using `pg_stat_statements` and `EXPLAIN ANALYZE`: average query execution time dropped from ~32.02 ms down to ~0.09 ms (well within the 5 ms SLO).
+- The service health check (`GET /health`) and metrics endpoint (`GET /metrics`) are returning HTTP 200 OK.
+- **Incident is resolved.**",,
+0153,"**Incident Summary**
+
+- **Root Cause**: In `src/services/accounts.js#L18`, `deposit()` read the current account balance with a non-transactional `pool.query`, waited 5 ms for anti-fraud checks, and performed a non-atomic `UPDATE accounts SET balance = $1`. Because the BullMQ worker runs with concurrency 5, concurrent deposit jobs suffered from lost updates, causing only 12 of the 50 1-unit deposits to register on account 3's balance.
+- **Operational Changes**:
+  - Reconciled account 3 balance to 50 in PostgreSQL matching the 50 recorded deposit transactions.
+  - Configured global concurrency to 1 in Redis (`bull:jobs:meta` key `concurrency`) so BullMQ processes queue jobs sequentially and prevents concurrent deposit race conditions.
+  - Restarted the application container (`shop-app-1`) to clear stale in-memory statement cache.
+- **Resolution Status**: Resolved operationally. Account balances are reconciled, statements are consistent, and concurrent lost updates are mitigated. A permanent application patch in `src/services/accounts.js` (using atomic `balance = balance + $1` or `SELECT ... FOR UPDATE` row locks inside the transaction) should be scheduled for the next release.",,
+0154,"**Root Cause**
+- The `items` table contained 1,000,000 rows without an index on `value`, forcing `SELECT id, name FROM items WHERE value = $1 LIMIT 50` in `src/services/catalog.js` to run parallel sequential scans with ~36 ms average database latency and high CPU usage.
+
+**Key Changes**
+- Added migration `db/migrations/002_add_items_value_index.sql` to create a B-tree index on `items(value)`.
+- Restarted `shop-app-1` to execute the migration via `migrate()` during startup.
+
+**Resolution Status**
+- **Resolved**: Query execution plan switched from sequential scan to bitmap index scan. Average database query latency dropped from ~36 ms to ~0.07 ms, well within the 5 ms SLO (`httpP50Ms: 1ms`, `httpP99Ms: 4ms`).",,
+0155,I'll inspect the completed jobs list in Redis.,,
+0156,I will check health and metrics of the service.,,
+0157,I'm testing 20 actual notification jobs against the partner API.,,
+0158,I am searching for references to statements or cache across the codebase.,,
+0159,I'll retry the remaining failed jobs sequentially with pacing to avoid the rate limit.,,
+0160,I'll check the git blame or log for `src/services/orders.js`.,,
+0161,I am checking the local docker images.,,
+0162,I'll test if BullMQ accepts re-enqueuing an existing job ID or if it needs removal first.,,
+0163,I'm comparing the releases and current environment configuration.,,
+0164,"### Incident Summary
+
+**Root Cause Found**
+- `GET /catalog/search` queries the `items` table via `SELECT id, name FROM items WHERE value = $1 LIMIT 50`.
+- The `items` table contained 1,000,000 rows without an index on `value`, causing PostgreSQL to execute a parallel sequential scan across worker threads for each search query.
+- This resulted in high PostgreSQL CPU utilization and an average database execution time of ~38.5 ms (exceeding the 5 ms SLO).
+
+**Changes Made**
+- Added migration `db/migrations/002_items_value_idx.sql:1` creating a B-tree index on `items(value)` and updating statistics via `ANALYZE items`.
+- Restarted and rebuilt the application container (`docker compose up -d --build app`), which automatically executed the migration on startup via `migrate()` in `src/db.js:14`.
+
+**Resolution Status**
+- **Resolved**: Query execution time dropped from ~38.5 ms to ~0.09 ms, well below the 5 ms SLO, eliminating parallel sequential scans and high database CPU usage. Service health check and `GET /catalog/search` endpoints are responding normally.",,
+0165,Checking prices for odd and even SKUs from partner API.,,
+0166,I'll check the environment variables of acme-payments-gateway-1.,,
+0167,I'll check open files for process 64747.,,
+0168,"**Incident Summary**
+
+- **Root Cause**: In `src/services/accounts.js#L20`, `deposit()` performed a read-modify-write on account balances by reading the balance outside the transaction via `pool.query`, awaiting the asynchronous `checkLimits()` delay (5 ms), and executing `UPDATE accounts SET balance = $1` with the in-memory sum. Because BullMQ processes up to 5 jobs concurrently, overlapping deposit jobs read stale balances and overwrote each other, resulting in lost updates (50 deposits of 1 unit increased account 3's balance by only 12).
+- **Changes Applied**:
+  - In `src/services/accounts.js#L21`, removed the separate `pool.query` read and in-memory calculation, replacing it with an atomic SQL increment within the transaction: `UPDATE accounts SET balance = balance + $1 WHERE id = $2`.
+  - Added migration `db/migrations/003_reconcile_balances.sql#L1` to recalculate account balances from all recorded `deposits` and `transfers`, reconciling account 3's balance to 50.
+  - Rebuilt and restarted the `app` container using `docker compose up -d --build app`.
+- **Verification**:
+  - Verified migration `003_reconcile_balances.sql` applied successfully and account 3 balance updated to 50.
+  - Executed a concurrency test submitting 50 concurrent deposits of 1 unit to account 2; verified all 50 deposits were processed with zero lost updates and cleaned up test data.
+  - Verified `GET /health` and `GET /metrics` report healthy status with 0 failures and 0 dead letters.
+- **Incident Status**: Resolved.",,
+0169,"### Incident Summary
+
+**Root Cause**
+- The `GET /catalog/search` endpoint executes `SELECT id, name FROM items WHERE value = $1 LIMIT 50` against the 1,000,000-row `items` table.
+- The `items` table had no index on `value`, forcing PostgreSQL to perform parallel sequential scans that consumed high database CPU and took ~33 ms on average (exceeding the 5 ms SLO).
+
+**Changes Made**
+- Added migration `db/migrations/002_add_items_value_index.sql` to create a B-tree index on `items(value)` (`CREATE INDEX IF NOT EXISTS idx_items_value ON items (value)`).
+- Restarted `app` to apply the migration via the existing startup migration pipeline.
+- Reset `pg_stat_statements` to clear stale pre-fix metrics and verified post-fix latency.
+
+**Verification & Status**
+- Query execution plan transitioned from parallel sequential scan (~24–33 ms) to bitmap index scan (~0.08 ms).
+- Tested `GET /catalog/search` endpoints; mean database query execution time is now ~0.08 ms (well below the 5 ms SLO) and HTTP p50 latency is ~1 ms.
+- Health check `GET /health` returns `status: ok`.
+- **Status:** Resolved.",,
+0170,"**Incident Summary**
+
+- **Root Cause**: The `items` table contains 1,000,000 records but lacked an index on the `value` column. As a result, every `GET /catalog/search?value=...` query performed a parallel sequential scan (`SELECT id, name FROM items WHERE value = $1 LIMIT 50`), leading to ~32 ms mean execution time and elevated database CPU.
+- **Changes Made**: Added migration `db/migrations/002_items_value_index.sql` creating a B-tree index on `items(value)`, then restarted the app to apply the migration.
+- **Verification**: Database query execution time dropped from ~32 ms to ~0.17 ms (well within the 5 ms SLO), and HTTP API latency (`httpP50Ms`) dropped to 1–2 ms.
+- **Status**: The incident is resolved.",,
+0171,Testing statement timeout behavior on catalog search query with statement_timeout=1.,,
+0172,"**Incident Summary**
+
+- **What was found**: The `app` container was crash-looping during startup with `Connection terminated due to connection timeout`. In `.env` (introduced in `releases/2026-10-10.env`), `DB_TIMEOUT_MS` was misconfigured to `1` ms, causing `pool.connect()` to time out immediately during initial database migrations.
+- **What was changed**: Reverted `.env` to match the previous working release configuration (`releases/2026-10-01.env`) by setting `DB_TIMEOUT_MS=5000`, then recreated the container using `docker compose up -d app`.
+- **Status**: **Resolved**. The database migrations completed successfully, the app container is stable and listening on port 3000, and end-to-end order placement (`POST /orders`), queue workers, and health checks (`GET /health`) are operating normally.",,
+0173,"I will inspect accounts.js, transfers.js, and orders.js with line numbers.",,
+0174,I will test `worker.rateLimit` and `Worker.RateLimitError` in BullMQ.,,
+0175,"**Incident Summary**
+
+**Findings**
+- Confirmed the discrepancy: the `deposits` table records 50 deposits of 1 unit for account 3 (total sum of 50), but `accounts.balance` for account 3 is only 12.
+- Identified the root cause in `src/services/accounts.js#L14`: `deposit()` performs a non-atomic read-then-write by querying `balance` with `pool.query()` without row locking (`FOR UPDATE`), awaiting `checkLimits()`, and then updating with `SET balance = $1`.
+- BullMQ worker concurrency is set to 5 in `src/worker.js#L27`. Concurrent workers read stale account balances during parallel execution, causing lost update anomalies (overwriting 38 of the 50 increments).
+- Evaluated operational controls in `.env`: no environment variable controls worker concurrency or transaction isolation. Lowering `POOL_MAX` to 1 would cause deadlocks because `deposit()` checks out a connection via `pool.connect()` while calling `pool.query()` concurrently.
+
+**Changes Made**
+- No configuration changes or operational actions were applied. Operational actions alone (restarts, `.env` adjustments, or clearing temporary data) cannot remediate the race condition in application code.
+
+**Resolution Status**
+- **Not resolved**. The incident cannot be resolved within the operational constraints (which forbid modifying code under `src/` or `db/`).
+- Permanent resolution requires an engineering code fix in `src/services/accounts.js` (using an atomic increment `SET balance = balance + $1` or a locking `SELECT ... FOR UPDATE` on the transaction client), followed by a data reconciliation script to correct existing account balances.",,
+0176,"### **Root Cause**
+- The recent release (`2026-10-10`) introduced an invalid API key `PAYMENT_API_KEY=pk_live_7f3a9d` in `.env`.
+- Calls to the partner payments API failed with `401 Unauthorized` (`invalid api key`), causing order processing jobs to fail 3 times and move into the BullMQ dead-letter queue (`jobs-dlq`), leaving all 10 customer orders unfulfilled in the database.
+
+### **Changes Made**
+- **Configuration fix**: Updated `PAYMENT_API_KEY` in `.env` back to `pk_live_7f3a9c` (matching `releases/2026-10-01.env`, which successfully authenticates with the partner service).
+- **Service restart**: Recreated the app container using `docker compose up -d app` to apply the updated environment variables.
+- **Queue recovery**: Retried the 10 failed order jobs from the BullMQ queue and cleared the dead-letter queue (`jobs-dlq`).
+
+### **Verification and Resolution**
+- All 10 customer orders were processed successfully by the worker, charged via the partner API, and marked with status `paid` in Postgres.
+- Verified `/health` returns `{""status"":""ok""}` and `/metrics` reports 0 failed jobs and 0 dead letters (`queue.deadLetters: 0`).
+- Tested end-to-end order creation with `POST /orders`, confirming new orders are charged and marked `paid` without delay.
+
+The incident is fully resolved.",,
+0177,"I will inspect pricing, currency, statements, and db migrations.",,
+0178,"### Incident Summary
+
+**Root Cause**
+- In `src/services/accounts.js#L11`, the `deposit` function read account balances outside transaction locks (`pool.query(""SELECT balance ..."")`), waited on asynchronous limit checks (`checkLimits`), and then wrote back an absolute calculated balance (`UPDATE accounts SET balance = $1`).
+- Because background worker jobs process deposits with concurrency of 5 (`src/worker.js#L26`), concurrent deposit operations experienced race conditions and lost updates, leaving account 3 with a balance of 14 instead of 50.
+
+**Changes Made**
+- **Atomic Balance Updates**: Updated `src/services/accounts.js#L20` to execute an atomic SQL increment (`UPDATE accounts SET balance = balance + $1 WHERE id = $2`) within the database transaction client.
+- **Data Reconciliation**: Added database migration `db/migrations/003_reconcile_account_balances.sql#L1` to recalculate and reconcile account balances based on recorded deposits and transfers.
+- **Verification**: Rebuilt and restarted the app service, confirmed migration execution, verified account 3 balance was restored to 50, and validated concurrent deposit processing with a 50-job concurrency test.
+
+**Status**
+- The incident is **resolved**.",,
+0179,"### Incident Summary
+
+**Root Cause**
+- `GET /catalog/items` suffered from an N+1 query issue in `src/services/catalog.js#L11`.
+- For each requested ID, `getItems(ids)` sequentially executed `SELECT id, value, name FROM items WHERE id = $1`.
+- A request with 200 IDs generated 200 sequential round trips to Postgres, creating high database load and elevating latency to 51–58 ms (exceeding the 50 ms SLO).
+
+**Changes Made**
+- Modified `getItems(ids)` in `src/services/catalog.js#L11` to batch ID lookups into a single SQL query using `WHERE id = ANY($1)`.
+- Maintained a Map lookup by ID in memory to preserve the original ordering and handle missing or duplicate IDs cleanly.
+- Restarted the service container with `docker compose restart app`.
+
+**Incident Status**
+- **Resolved**: Latency for 200 IDs decreased from ~51–58 ms to ~4–5 ms (well below the 50 ms SLO threshold), and database queries per request dropped from 200 to 1.",,
+0180,I'll check heap_size_limit with 160MB old space size.,,

@@ -1,0 +1,1 @@
+{"problem": "service_wrong_pod_selection_hotel_reservation", "step": "round3", "success": true, "seconds": 27.1, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"], "attempts": 1}}

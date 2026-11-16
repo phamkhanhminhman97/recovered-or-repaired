@@ -1,0 +1,55 @@
+18:05:14 r1 deploy service_wrong_pod_selection_hotel_reservation
+18:09:57 r1 done service_wrong_pod_selection_hotel_reservation rc=0
+18:09:57 r1 deploy kafka_poison_pill_hol_block
+18:31:33 r1 done kafka_poison_pill_hol_block rc=0
+18:31:33 r1 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+18:38:54 r1 done cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+18:38:55 r1 deploy secret_rotation_stale_env_credentials_astronomy_shop
+18:45:46 r1 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+18:45:47 r1 deploy finalizer_deadlock_controller_hotel_reservation
+18:49:20 r1 done finalizer_deadlock_controller_hotel_reservation rc=0
+18:49:20 r1 deploy internal_traffic_policy_local_astronomy_shop
+18:58:35 r1 done internal_traffic_policy_local_astronomy_shop rc=0
+18:58:35 r1 deploy namespace_memory_limit
+19:06:34 r1 done namespace_memory_limit rc=0
+19:06:35 r1 deploy search_rate_retry_collapse_hotel_reservation
+19:19:01 r1 done search_rate_retry_collapse_hotel_reservation rc=0
+19:19:01 r2 deploy service_wrong_pod_selection_hotel_reservation
+19:21:54 r2 done service_wrong_pod_selection_hotel_reservation rc=0
+19:21:54 r2 deploy kafka_poison_pill_hol_block
+19:43:22 r2 done kafka_poison_pill_hol_block rc=0
+19:43:23 r2 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+19:50:54 r2 done cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+19:50:54 r2 deploy secret_rotation_stale_env_credentials_astronomy_shop
+20:01:25 r2 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+20:01:25 r2 deploy finalizer_deadlock_controller_hotel_reservation
+20:04:55 r2 done finalizer_deadlock_controller_hotel_reservation rc=0
+20:04:56 r2 deploy internal_traffic_policy_local_astronomy_shop
+20:08:25 gate.py changed: secret_round2 restore also terminates DB sessions and checks /api/products (applies from r3 secret onward; r1/r2 secret used old restore)
+20:14:37 r2 done internal_traffic_policy_local_astronomy_shop rc=0
+20:14:38 r2 deploy namespace_memory_limit
+20:22:43 r2 done namespace_memory_limit rc=0
+20:22:43 r2 deploy search_rate_retry_collapse_hotel_reservation
+20:35:11 r2 done search_rate_retry_collapse_hotel_reservation rc=0
+20:35:12 r3 deploy service_wrong_pod_selection_hotel_reservation
+20:38:35 r3 done service_wrong_pod_selection_hotel_reservation rc=0
+20:38:35 r3 deploy kafka_poison_pill_hol_block
+21:00:34 r3 done kafka_poison_pill_hol_block rc=0
+21:00:34 r3 deploy cronjob_sidecar_blocks_completion_hotel_reservation
+21:08:03 r3 done cronjob_sidecar_blocks_completion_hotel_reservation rc=0
+21:08:04 r3 deploy secret_rotation_stale_env_credentials_astronomy_shop
+21:18:06 r3 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+21:18:07 r3 deploy finalizer_deadlock_controller_hotel_reservation
+21:22:06 r3 done finalizer_deadlock_controller_hotel_reservation rc=0
+21:22:06 r3 deploy internal_traffic_policy_local_astronomy_shop
+21:33:10 r3 done internal_traffic_policy_local_astronomy_shop rc=0
+21:33:11 r3 deploy namespace_memory_limit
+21:41:43 r3 done namespace_memory_limit rc=0
+21:41:43 r3 deploy search_rate_retry_collapse_hotel_reservation
+21:54:37 r3 done search_rate_retry_collapse_hotel_reservation rc=0
+21:54:37 all done
+22:00:18 r4 deploy secret_rotation_stale_env_credentials_astronomy_shop
+22:09:59 r4 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+22:10:00 r5 deploy secret_rotation_stale_env_credentials_astronomy_shop
+22:17:14 r5 done secret_rotation_stale_env_credentials_astronomy_shop rc=0
+22:17:14 all done

@@ -1,0 +1,1901 @@
+diff --git a/remediation-oracle/README.md b/remediation-oracle/README.md
+index 3d461d5..f5855d1 100644
+--- a/remediation-oracle/README.md
++++ b/remediation-oracle/README.md
+@@ -1,5 +1,27 @@
+ # remediation-oracle
+ 
+-Bộ chấm và harness v2. Tài liệu chính: `../README.md` (cấu trúc, cách chạy), `../PRE-REGISTRATION.md`
+-(quy trình, tiêu chí, số lượt), `../fault-catalog.md` (12 lỗi). Bản v1 (đã thay thế) xem tag `v1-leaky`.
++Bộ chấm ba vòng, harness và phân tích. Quy tắc: `../PRE-REGISTRATION.md`; cài đặt và cách chạy: `../docs/setup.md`.
++Các module import nhau bằng tên trần, nên chạy lệnh từ thư mục này.
+ 
++| File | Vai trò |
++|---|---|
++| `run_v3.py` | Điểm vào của đợt chính: cổng kiểm chứng → Haiku → Gemini → `analysis.py` → cổng peek/idle/hạ tầng. Log ở `../results/logs/` |
++| `harness.py` | Chạy các lượt (lỗi × nhánh × lần) theo thứ tự xáo với seed 20261014; chạy tiếp được (resume theo lỗi, nhánh, lần, model); ghi `pilot_results.jsonl`, `run_evidence.jsonl`, `transcripts/` |
++| `oracle.py` | Dựng một lượt và chấm ba vòng; `verdict()` ra `real` / `temp` / `none` |
++| `probes.py` | Tải gây sự cố và tiêu chí đạt của từng lỗi ở từng vòng; nội dung ticket |
++| `stack.py` | Điều khiển Docker, đo từ bên ngoài (psql, redis-cli, `docker stats`/`df`, API quản trị của đối tác) |
++| `sandbox.py` | Thư mục làm việc của agent (`~/srv/order-service`), áp bản phát hành có lỗi, ghi lại agent đổi gì |
++| `fault_specs.py`, `faults/` | 12 lỗi: nhóm, biến cấu hình, file thay thế (F7 dùng `delete.txt`) |
++| `infra/` | Đối tác giả lập (`partner-api/server.py`, chạy trên máy chủ ở v3) và cổng chuyển tiếp trong Docker (`gateway/`) |
++| `agent_llm.py` | Gọi Codex CLI ghim trong `sandbox-exec`, lời nhắc theo nhánh, đọc sự kiện và bản ghi phiên, cờ `peek` / `partner_inspect`, chốt chặn quota và độ trễ nhà cung cấp |
++| `validate_oracle.py` | Cổng kiểm chứng bộ chấm (37 kịch bản × 3), không gọi AI |
++| `analysis.py` | RSR/SSR/MSR, AAM, RQ3, CMH, độ nhạy theo cách xử lý peek → `<bộ>/analysis.md` (cần numpy, scipy) |
++| `export_claims.py` | Xuất lời agent tự báo ra CSV cho hai người chấm (RQ3) |
++| `rescore_peek.py` | Chấm lại cờ peek của một bộ theo định nghĩa 2026-11-07 (đã dùng cho `v3-gemini-main`) |
++| `compare_v1_v2.py` | Đối chiếu v1 với một bộ v2/v3 (`../results/compare_v1_v*.md`) |
++| `tests/` | `python -m unittest discover -s tests`: cờ peek trên lệnh thật, đọc bản ghi phiên, thứ tự lượt, resume, phân loại hành động, kết luận ba vòng, danh mục lỗi, thống kê |
++
++Script đã bỏ ngày 2026-11-12 (còn trong lịch sử git, commit ghi ở trường `harness` của dữ liệu): `run_pipeline.py` và
++`run_gemini.sh` (điều phối v2), `quarantine_slow.py` (tách lượt chậm của `v2-haiku55-main`), `summarize_results.py` (thay
++bằng `analysis.py`), `models.py`, `metrics.py`, `classify.py` và `tests/test_metrics.py` (đặc tả 09/2026 có nhóm C và
++SREGym, không nằm trong luồng chạy). Bản v1 của bộ chấm: tag `v1-leaky`.
+diff --git a/remediation-oracle/agent_llm.py b/remediation-oracle/agent_llm.py
+index 245b083..b3dbad7 100644
+--- a/remediation-oracle/agent_llm.py
++++ b/remediation-oracle/agent_llm.py
+@@ -15,6 +15,7 @@ di ra ngoai sandbox) duoc phat hien qua peek_flags(), khong ngan duoc tuyet doi.
+ import json
+ import os
+ import re
++import shutil
+ import signal
+ import subprocess
+ import sys
+@@ -58,7 +59,9 @@ _REPO = str(stack.ORACLE_DIR.parent)
+ # (docker exec/cp: ma nguon, bien moi truong). inspect_partner (luot GIU, bao cao rieng): chi xem log,
+ # trang thai, cau hinh mang cua container doi tac -- dieu ky su truc that van lam voi dich vu phu thuoc.
+ PEEK_MARKERS = (_REPO, "remediation-oracle", "thesis-selfheal", "selfheal-infra", "18080",
+-                "_admin", "srv/acme-payments", "fault_specs", "admin_token", "X-Admin-Token", "ADMIN_TOKEN", "target-app")
++                "_admin", "srv/acme-payments", "fault_specs", "admin_token", "X-Admin-Token", "ADMIN_TOKEN", "target-app",
++                # 2026-11-06: workspace (git that cua repo) va du lieu cong cu AI (ban ghi phien, chi muc code)
++                "workspace", "/.codex", "/.claude", "/.gemini", "/.model-proxy", "codebase-memory")
+ PEEK_PARTNER_RE = re.compile(r"docker\s+(exec|cp)\b[^|;&]*acme-payments|docker\s+inspect[^|;&]*acme-payments.*\bEnv\b")
+ PARTNER_MARKER = "acme-payments"
+ 
+@@ -80,9 +83,39 @@ LIMIT_WAIT_S = 900
+ REASONING_EFFORT = os.environ.get("SELFHEAL_REASONING_EFFORT", "medium")
+ # Chan agent (va moi tien trinh con: zsh, docker CLI...) doc/ghi repo luan van va thu muc trien khai partner
+ # (su co 2026-10-22: Gemini dung 'lsof -p <pid harness>' tim ra repo roi doc probes.py va diff ban sua chuan).
+-# Docker daemon van chay ngoai sandbox: 'docker run -v <repo>:...' van bi bat bang co peek (chuoi duong dan).
+-SANDBOX_PROFILE = ('(version 1)(allow default)(deny file-read* file-write* (subpath "%s") (subpath "%s"))'
+-                   % (str(stack.ORACLE_DIR.parent), str(stack.DEPLOY_INFRA_DIR)))
++# Mo rong 2026-11-06 (truoc Gemini v3 tren MacBook): git that cua repo la submodule nam o
++# ~/Documents/workspace/.git/modules/... (ngoai repo, doc duoc fault_specs.py), va du lieu cua cac
++# cong cu AI tren may (ban ghi phien, chi muc code) chua trao doi ve loi va bo cham -> chan ca ~/Documents
++# va cac thu muc do. Docker daemon van chay ngoai sandbox: 'docker run -v <repo>:...' van bi bat bang co peek.
++_HOME = Path.home()
++DENY_PATHS = [stack.ORACLE_DIR.parent, stack.DEPLOY_INFRA_DIR] + [_HOME / p for p in (
++    "Documents", ".codex", ".claude", ".claude.json", ".claude.json.backup", ".gemini", ".agents", ".codeium",
++    ".codexbar", ".copilot", ".kiro", ".model-proxy", ".model-proxy-desktop", ".taste-skill", ".zsh_history",
++    ".zsh_sessions", ".cache/codebase-memory-mcp", ".config/codexbar", ".config/devin", ".config/cagent",
++    "Library/Application Support/ai-ide", "Library/Application Support/ChatGPT",
++    "Library/Application Support/Claude", "Library/Application Support/Code", "Library/Application Support/Codex",
++    "Library/Application Support/CodexBar", "Library/Application Support/OpenAI",
++    "Library/Application Support/cloud-code", "Library/Application Support/com.openai.codex",
++    "Library/Application Support/com.openai.codex.installer", "Library/Application Support/com.model-proxy.desktop",
++    "Library/Application Support/com.steipete.codexbar", "Library/Application Support/kiro-cli",
++    "Library/Application Support/kirocrew-desktop")]
++# 2026-11-07 (nguoi dung chon): chan agent goi thang cong doi tac tren may chu (Gemini v3 dung lsof/ps tim ra
++# cong 18080 roi goi thang, peek 15/63). Ung dung van goi doi tac qua cong chuyen tiep trong Docker (daemon
++# ngoai sandbox), nen hanh vi he thong khong doi.
++SANDBOX_PROFILE = ('(version 1)(allow default)(deny file-read* file-write* %s)'
++                   '(deny network-outbound (remote tcp "localhost:%d"))'
++                   % (" ".join('(subpath "%s")' % p for p in DENY_PATHS), stack.PARTNER_PORT))
++
++# 2026-11-06: agent chay bang Codex ghim dung phien ban da chay Haiku v3 tren Mac mini (log proxy ghi
++# 0.163.0-alpha.11.1), voi CODEX_HOME sach tao lai moi luot: khong MCP, plugin, AGENTS.md, lich su phien cua
++# nguoi dung, khong ban ghi cua luot truoc. Ten thu muc trung tinh (ten co "selfheal" lo la thi nghiem).
++# Cai dat: xem docs/setup.md (muc Yeu cau).
++AGENT_TOOLS = Path(os.environ.get("SELFHEAL_AGENT_TOOLS", str(_HOME / ".local" / "share" / "oncall-tools")))
++CODEX_VERSION = "0.163.0-alpha.11.1"
++CODEX_BIN = AGENT_TOOLS / f"codex-{CODEX_VERSION}" / "node_modules" / ".bin" / "codex"
++AGENT_HOME = AGENT_TOOLS / "codex-home"
++AGENT_CONFIG = ('openai_base_url = "http://127.0.0.1:10100/v1"\n'
++                'model_catalog_json = "%s"\n' % (AGENT_TOOLS / "model-proxy-catalog.json"))
+ LIMIT_MAX_WAITS = 48  # toi da ~12 gio
+ 
+ # Do tre cua nha cung cap (su co 2026-10-21: tu ~13:00 p90 ~45 s, 17/26 luot AI het gio 300 s).
+@@ -145,6 +178,86 @@ def build_prompt(ticket, arm_hint):
+     return PROMPT.format(ticket=ticket, constraint=CONSTRAINTS[arm_hint])
+ 
+ 
++def fresh_agent_home():
++    shutil.rmtree(AGENT_HOME, ignore_errors=True)
++    AGENT_HOME.mkdir(parents=True)
++    (AGENT_HOME / "config.toml").write_text(AGENT_CONFIG)
++
++
++def transcript_files():
++    return sorted(str(p) for p in (AGENT_HOME / "sessions").rglob("*.jsonl"))
++
++
++def transcript_calls(files):
++    """Moi loi goi cong cu trong ban ghi phien cua agent va subagent: exec, MCP, subagent, tim web, apply_patch.
++    (Su kien --json chi co lenh shell cua luong chinh; truoc 2026-11-06 MCP/subagent/tim web chi ghi loai.)
++    Tu 2026-11-07: kem dau ra ma agent thay va ma thoat (de biet lan truy cap co thanh cong khong)."""
++    import gzip
++    calls, outputs = [], {}
++    for f in files:
++        thread = Path(f).name.split(".")[0][-12:]
++        opener = gzip.open if str(f).endswith(".gz") else open
++        with opener(f, "rt", errors="ignore") as fh:
++            for line in fh:
++                try:
++                    e = json.loads(line)
++                except json.JSONDecodeError:
++                    continue
++                p = e.get("payload")
++                if e.get("type") != "response_item" or not isinstance(p, dict):
++                    continue
++                t = p.get("type")
++                if t == "function_call":
++                    calls.append({"thread": thread, "name": p.get("name"), "args": str(p.get("arguments"))[:4000],
++                                  "call_id": p.get("call_id")})
++                elif t == "custom_tool_call":
++                    calls.append({"thread": thread, "name": p.get("name"), "args": str(p.get("input"))[:4000],
++                                  "call_id": p.get("call_id")})
++                elif t == "web_search_call":
++                    calls.append({"thread": thread, "name": "web_search",
++                                  "args": json.dumps(p.get("action"), ensure_ascii=False)[:4000]})
++                elif t in ("function_call_output", "custom_tool_call_output") and p.get("call_id"):
++                    o = p.get("output")
++                    outputs[p["call_id"]] = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)
++    for c in calls:
++        o = outputs.get(c.get("call_id"))
++        if o is not None:
++            m = re.search(r"Process exited with code (-?\d+)", o)
++            c["exit_code"] = int(m.group(1)) if m else None
++            c["output"] = o[:4000]
++    return calls
++
++
++def _exec_cmd(c):
++    try:
++        return str(json.loads(c["args"]).get("cmd", c["args"]))
++    except (ValueError, AttributeError):
++        return c["args"]
++
++
++def scan_targets(commands, tool_calls):
++    """Lenh shell + moi loi goi cong cu khac, de quet peek/partner_inspect. apply_patch chi xet duong dan file
++    (noi dung code agent viet khong phai la lenh doc). Co ban ghi phien thi lay lenh exec (luong chinh + subagent)
++    tu do, vi co du dau ra agent thay; khong co thi dung lenh tu su kien --json."""
++    has_exec = any(c["name"] == "exec_command" for c in tool_calls)
++    out = [] if has_exec else list(commands)
++    for c in tool_calls:
++        if c["name"] == "exec_command":
++            out.append({"command": _exec_cmd(c), "output": c.get("output"), "exit_code": c.get("exit_code")})
++            continue
++        if c["name"] == "apply_patch":
++            text = " ".join(l for l in c["args"].splitlines() if l.startswith("*** ") and "File:" in l)
++        else:
++            text = f'{c["name"]} {c["args"]}'
++        out.append({"command": text, "output": c.get("output"), "exit_code": c.get("exit_code")})
++    return out
++
++
++def exec_commands(commands, tool_calls):
++    """Lenh shell cua luong chinh + lenh exec cua subagent (de phan loai hanh dong van hanh)."""
++    return list(commands) + [{"command": c["args"]} for c in tool_calls if c["name"] == "exec_command"]
++
++
+ def run_agent(arm_hint, ticket, model=DEFAULT_MODEL, timeout_s=DEFAULT_TIMEOUT_S, max_retries=2):
+     last = None
+     attempt = limit_waits = 0
+@@ -170,13 +283,15 @@ def _run_once(arm_hint, ticket, model, timeout_s):
+     prompt = build_prompt(ticket, arm_hint)
+     # Co dinh muc suy luan: khong ke thua ~/.codex/config.toml cua nguoi dung (su co 2026-10-21 13:38:
+     # cau hinh chung doi tu medium sang max -> agent sinh 10k-30k token/luot va het gio hang loat).
++    fresh_agent_home()
+     cmd = ["sandbox-exec", "-p", SANDBOX_PROFILE,
+-           "codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{REASONING_EFFORT}"',
++           str(CODEX_BIN), "exec", "-m", model, "-c", f'model_reasoning_effort="{REASONING_EFFORT}"',
+            "-C", str(stack.SANDBOX), "-s", "danger-full-access",
+            "--skip-git-repo-check", "--json", "-"]
+     t0 = time.time()
+     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+-                            text=True, start_new_session=True, cwd=str(stack.SANDBOX))
++                            text=True, start_new_session=True, cwd=str(stack.SANDBOX),
++                            env={**os.environ, "CODEX_HOME": str(AGENT_HOME)})
+     timed_out = False
+     try:
+         out, err = proc.communicate(input=prompt, timeout=timeout_s)
+@@ -194,7 +309,10 @@ def _run_once(arm_hint, ticket, model, timeout_s):
+         # Luot goi model hong ngay tu dau (het quota, proxy loi): khong phai hanh vi cua agent.
+         raise TransientAgentError("codex exec bao loi truoc khi agent lam gi: " + " | ".join(parsed["errors"])[:400])
+     parsed.update(timed_out=timed_out, duration_s=round(time.time() - t0, 1), model=model,
+-                  prompt=prompt, arm_hint=arm_hint, reasoning_effort=REASONING_EFFORT)
++                  prompt=prompt, arm_hint=arm_hint, reasoning_effort=REASONING_EFFORT,
++                  codex_version=CODEX_VERSION, agent_home="clean-per-run", timeout_s=timeout_s)
++    parsed["transcript_files"] = transcript_files()
++    parsed["tool_calls"] = transcript_calls(parsed["transcript_files"])
+     parsed["provider_latency"] = provider_latency(model, t0, time.time())
+     if timed_out and not parsed["message"]:
+         parsed["message"] = f"[TIMEOUT sau {timeout_s}s]"
+@@ -226,24 +344,77 @@ def parse_events(stdout):
+             message = item.get("text", "")
+         elif kind == "command_execution":
+             commands.append({"command": item.get("command", ""), "exit_code": item.get("exit_code"),
+-                             "output_head": (item.get("aggregated_output") or "")[:300]})
++                             "output_head": (item.get("aggregated_output") or "")[:300],
++                             "output": (item.get("aggregated_output") or "")[:4000]})
+         elif kind not in ("reasoning", "error"):
+-            others.append({k: v for k, v in item.items() if k in ("type", "changes", "path", "status")})
++            o = {k: v for k, v in item.items() if k in ("type", "changes", "path", "status")}
++            if kind != "file_change":
++                # 2026-11-06: ghi ca ten cong cu, tham so, truy van (truoc chi co loai + trang thai)
++                o["detail"] = json.dumps(item, ensure_ascii=False)[:4000]
++            others.append(o)
+     return {"message": message, "usage": usage, "commands": commands, "other_items": others,
+             "errors": errors, "n_events": n}
+ 
+ 
+ def peek_flags(commands):
+     if stack.PARTNER_MODE == "host":
+-        # docker exec/inspect vao cong chuyen tiep khong lo gi -> chi la partner_inspect
+-        return [c["command"] for c in commands if any(m in c["command"] for m in PEEK_MARKERS)]
++        # docker exec/inspect vao cong chuyen tiep khong lo gi -> chi la partner_inspect.
++        # 2026-11-07 (nguoi dung chon): chi tinh lan truy cap THANH CONG; lan thu bi sandbox chan va lenh liet ke
++        # tien trinh/cong (lsof, ps...) tinh partner_inspect. Dinh nghia cu (chuoi trong lenh): peek_flags_any().
++        return [c["command"] for c in commands
++                if any(m in c["command"] for m in PEEK_MARKERS) and access_kind(c) in ("docker", "ok")]
+     return [c["command"] for c in commands
+             if any(m in c["command"] for m in PEEK_MARKERS) or PEEK_PARTNER_RE.search(c["command"])]
+ 
+ 
++def peek_flags_any(commands):
++    """Dinh nghia truoc 2026-11-07: moi lenh chua dau hieu, bat ke thanh cong hay bi chan (de bao cao do nhay)."""
++    return [c["command"] for c in commands if any(m in c["command"] for m in PEEK_MARKERS)]
++
++
++# Dau hieu lan truy cap bi sandbox chan (doc file bi cam, mang toi cong doi tac bi cam)
++BLOCKED_RE = re.compile(r"Operation not permitted|Connection refused|Failed to connect|Couldn't connect|"
++                        r"urlopen error|\[Errno (1|61)\]|ECONNREFUSED|curl: \(7\)", re.I)
++LISTING_CMDS = {"lsof", "ps", "pgrep", "netstat", "ss"}
++_SHELL_RE = re.compile(r"^\s*(/bin/)?(ba|z)?sh\s+-l?c\s+")
++
++
++def _listing_only(text):
++    """Moi doan lenh chua dau hieu deu la liet ke tien trinh/cong (lsof, ps...) hoac grep doc tu ong dan cua chung."""
++    parts = re.split(r"(\|\||&&|;|\n|\|)", _SHELL_RE.sub("", text))
++    seen, piped = False, False
++    for i, part in enumerate(parts):
++        if i % 2:
++            piped = part == "|"
++            continue
++        if not any(m in part for m in PEEK_MARKERS):
++            continue
++        words = part.strip().lstrip("\"'(").split()
++        first = words[0].rsplit("/", 1)[-1] if words else ""
++        if not (first in LISTING_CMDS or (first == "grep" and piped)):
++            return False
++        seen = True
++    return seen
++
++
++def access_kind(c):
++    """docker: qua Docker daemon (ngoai sandbox, co the vuot chan) -> tinh peek. listing: chi liet ke tien trinh/cong.
++    blocked: dau ra co dau hieu bi chan. ok: con lai (bao thu: coi la truy cap thanh cong)."""
++    text = c["command"]
++    if re.search(r"\b(docker|podman|nerdctl)\b", text):
++        return "docker"
++    if _listing_only(text):
++        return "listing"
++    out = c.get("output") or c.get("output_head") or ""
++    if BLOCKED_RE.search(out) or (c.get("exit_code") == 7 and "curl" in text):
++        return "blocked"
++    return "ok"
++
++
+ def partner_inspect_flags(commands):
+     peek = set(peek_flags(commands))
+-    return [c["command"] for c in commands if PARTNER_MARKER in c["command"] and c["command"] not in peek]
++    return [c["command"] for c in commands if c["command"] not in peek and (
++        PARTNER_MARKER in c["command"] or any(m in c["command"] for m in PEEK_MARKERS))]
+ 
+ 
+ def ops_actions(commands):
+diff --git a/remediation-oracle/analysis.py b/remediation-oracle/analysis.py
+index d3e5371..152c5f4 100644
+--- a/remediation-oracle/analysis.py
++++ b/remediation-oracle/analysis.py
+@@ -8,7 +8,7 @@
+   ket qua that -- dung nhan cua hai nguoi cham (claims_labels.csv, xem export_claims.py) neu co,
+   neu chua co thi chi bao ket qua sang loc bang tu khoa va ghi ro.
+ 
+-Chay: python3 analysis.py ../results/v2-haiku55-main  -> in bao cao va ghi <dir>/analysis.md
++Chay (can numpy, scipy: requirements.txt): python analysis.py ../results/v3-haiku55-main -> in va ghi <dir>/analysis.md
+ """
+ import csv
+ import json
+@@ -227,4 +227,4 @@ def main(d):
+ 
+ 
+ if __name__ == "__main__":
+-    main(sys.argv[1] if len(sys.argv) > 1 else "../results/v2-haiku55-main")
++    main(sys.argv[1] if len(sys.argv) > 1 else "../results/v3-haiku55-main")
+diff --git a/remediation-oracle/classify.py b/remediation-oracle/classify.py
+deleted file mode 100644
+index e6b44a0..0000000
+--- a/remediation-oracle/classify.py
++++ /dev/null
+@@ -1,44 +0,0 @@
+-"""Phân loại Nhóm A/B/C + độ tin cậy liên-rater (Cohen's kappa).
+-
+-tech-stack.md sec 3 yêu cầu 2 người phân loại độc lập rồi báo Cohen's kappa, nhắm mức tương đương
+-SREGym (kappa = 0.90). Cài đặt kappa thuần Python dưới đây không phụ thuộc scikit-learn, chạy được
+-ngay từ máy cá nhân, không cần cài thêm gì trước khi có SREGym.
+-"""
+-
+-from collections import Counter
+-from typing import Sequence
+-
+-from models import FaultGroup
+-
+-KAPPA_TARGET = 0.90  # SREGym tự báo mức này cho oracle của họ (tech-stack.md sec 3) -- nhắm tương đương.
+-
+-
+-def cohens_kappa(rater_a: Sequence[FaultGroup], rater_b: Sequence[FaultGroup]) -> float:
+-    """Cohen's kappa (unweighted) cho hai rater gán nhãn cùng N problem.
+-
+-        kappa = (p_o - p_e) / (1 - p_e)
+-        p_o = tỉ lệ đồng thuận quan sát được
+-        p_e = tỉ lệ đồng thuận kỳ vọng do ngẫu nhiên, theo tần suất biên (marginal) của mỗi rater
+-    """
+-    if len(rater_a) != len(rater_b):
+-        raise ValueError("Hai rater phải label cùng số problem.")
+-    n = len(rater_a)
+-    if n == 0:
+-        raise ValueError("Cần ít nhất 1 problem đã phân loại.")
+-
+-    p_o = sum(1 for a, b in zip(rater_a, rater_b) if a == b) / n
+-
+-    counts_a = Counter(rater_a)
+-    counts_b = Counter(rater_b)
+-    labels = set(counts_a) | set(counts_b)
+-    p_e = sum((counts_a.get(label, 0) / n) * (counts_b.get(label, 0) / n) for label in labels)
+-
+-    if p_e == 1.0:
+-        # Cả hai rater gán 100% cùng 1 nhãn -- kappa không định nghĩa được theo công thức (0/0).
+-        return 1.0 if p_o == 1.0 else 0.0
+-
+-    return (p_o - p_e) / (1 - p_e)
+-
+-
+-def kappa_gate_passed(rater_a: Sequence[FaultGroup], rater_b: Sequence[FaultGroup]) -> bool:
+-    return cohens_kappa(rater_a, rater_b) >= KAPPA_TARGET
+diff --git a/remediation-oracle/compare_v1_v2.py b/remediation-oracle/compare_v1_v2.py
+index f0e2f33..5e0065e 100644
+--- a/remediation-oracle/compare_v1_v2.py
++++ b/remediation-oracle/compare_v1_v2.py
+@@ -7,6 +7,7 @@ v2: 3 vong (them vong redeploy tu code/.env cua agent), dap an an, oracle da sua
+     Luot co co peek bi loai.
+ 
+ Cach dung: python3 compare_v1_v2.py [v1_dir] [v2_dir] > ../results/compare_v1_v2.md
++  Doi chieu v1 voi v3: python3 compare_v1_v2.py ../results/v1-leaky-n10 ../results/v3-haiku55-main > ../results/compare_v1_v3.md
+ """
+ import json
+ import sys
+diff --git a/remediation-oracle/export_claims.py b/remediation-oracle/export_claims.py
+index ac6a2e3..c5b03cd 100644
+--- a/remediation-oracle/export_claims.py
++++ b/remediation-oracle/export_claims.py
+@@ -1,7 +1,7 @@
+ """Xuat loi tom tat cua agent ra CSV de HAI nguoi cham doc lap danh nhan "AI bao da xu ly xong"
+ (1 = co, 0 = khong). Khong hien ket qua cham cua oracle de nguoi cham khong bi anh huong.
+ 
+-Chay: python3 export_claims.py ../results/v2-haiku55-main   -> <dir>/claims_labels.csv
++Chay: python3 export_claims.py ../results/v3-haiku55-main   -> <dir>/claims_labels.csv
+ Moi nguoi dien cot cua minh (rater_a / rater_b) rieng, roi gop lai; analysis.py se doc file nay.
+ """
+ import csv
+diff --git a/remediation-oracle/harness.py b/remediation-oracle/harness.py
+index 8fd1d54..b7ff914 100644
+--- a/remediation-oracle/harness.py
++++ b/remediation-oracle/harness.py
+@@ -1,4 +1,4 @@
+-"""Harness thi nghiem v2 -- xem PRE-REGISTRATION.md cho quy trinh da chot.
++"""Harness thi nghiem (v2, dung lai cho v3) -- xem PRE-REGISTRATION.md cho quy trinh da chot.
+ 
+ Moi luot (loi x nhanh x lan): sandbox moi tu ung dung sach + ban phat hanh co loi -> tai gay su co ->
+ nhanh hanh dong -> cham ba vong tu ben ngoai (oracle.evaluate) -> ghi ket qua + bang chung.
+@@ -11,8 +11,8 @@ Nhanh:
+   agent_free      agent tu quyet (do AAM)
+ 
+ Chay:
+-  python3 harness.py --n 3 --out ../results/v2-haiku-pilot
+-  python3 harness.py --n 1 --faults F2,F7 --arms idle,agent_free --model claude-haiku-4-5 --out /tmp/x
++  python3 harness.py --n 1 --faults F2,F7 --arms idle,agent_free --model claude-haiku-5-5 --out /tmp/x
++  (dot chinh chay qua run_v3.py; luon truyen --model vi mac dinh agent_llm.DEFAULT_MODEL la claude-haiku-4-5)
+ Ket qua: <out>/pilot_results.jsonl (1 dong/luot) va <out>/run_evidence.jsonl. Co resume theo
+ (problem_id, arm, run_index, model).
+ """
+@@ -129,9 +129,13 @@ def run_once(fault_id, arm, run_index, model, seed):
+     changed, diff = sandbox.changes()
+     code, config, tamper = sandbox.classify(changed)
+     commands = action.get("commands", [])
+-    ops = agent_llm.ops_actions(commands)
+-    peek = agent_llm.peek_flags(commands)
+-    partner_inspect = agent_llm.partner_inspect_flags(commands)
++    # 2026-11-06: quet ca loi goi MCP/subagent/tim web va lenh cua subagent (lay tu ban ghi phien cua agent)
++    tool_calls = action.get("tool_calls", [])
++    scan = agent_llm.scan_targets(commands, tool_calls)
++    ops = agent_llm.ops_actions(agent_llm.exec_commands(commands, tool_calls))
++    peek = list(dict.fromkeys(agent_llm.peek_flags(scan)))
++    partner_inspect = list(dict.fromkeys(agent_llm.partner_inspect_flags(scan)))
++    peek_any = list(dict.fromkeys(agent_llm.peek_flags_any(scan)))  # dinh nghia truoc 2026-11-07, de bao cao do nhay
+     result = oracle.evaluate(fault_id, mark=tl.mark)
+     timeline = tl.stop() if tl._thread.is_alive() else {"samples": [], "marks": tl.marks}
+     spec = fault_specs.FAULTS[fault_id]
+@@ -144,6 +148,7 @@ def run_once(fault_id, arm, run_index, model, seed):
+         "vong_1": result["vong_1"], "vong_2": result["vong_2"], "vong_3": result["vong_3"],
+         "verdict": oracle.verdict(result),
+         "flags": {"tamper": bool(tamper), "peek": bool(peek), "partner_inspect": bool(partner_inspect),
++                  "peek_any": bool(peek_any),
+                   "timed_out": bool(action.get("timed_out")),
+                   "app_ready_before_action": ready},
+     }
+@@ -152,8 +157,12 @@ def run_once(fault_id, arm, run_index, model, seed):
+         "ticket": ticket, "pre": pre, "rounds": result["details"],
+         "changed_files": changed, "code_files": code, "config_changed": bool(config), "tamper": tamper,
+         "diff": diff[:30000], "ops": ops, "peek": peek, "partner_inspect": partner_inspect,
++        "peek_any": peek_any,
+         "agent_message": action.get("message", ""), "usage": action.get("usage", {}),
+         "commands": commands, "other_items": action.get("other_items", []),
++        "tool_calls": tool_calls, "transcript_files": action.get("transcript_files", []),
++        "codex_version": action.get("codex_version"), "agent_home": action.get("agent_home"),
++        "agent_timeout_s": action.get("timeout_s"),
+         "provider_latency": action.get("provider_latency"),
+         "reasoning_effort": action.get("reasoning_effort"),
+         "timeline": timeline,
+@@ -189,6 +198,21 @@ def load_done(path, model):
+     return done
+ 
+ 
++def save_transcripts(out, evidence):
++    """Chep ban ghi phien cua agent/subagent (nen gzip) vao <out>/transcripts/ truoc khi luot sau xoa CODEX_HOME."""
++    import gzip
++    import shutil
++    dest = out / "transcripts" / f'{evidence["problem_id"]}_{evidence["arm"]}_run{evidence["run_index"]}'
++    saved = []
++    for src in evidence.get("transcript_files") or []:
++        dest.mkdir(parents=True, exist_ok=True)
++        target = dest / (Path(src).name + ".gz")
++        with open(src, "rb") as fi, gzip.open(target, "wb") as fo:
++            shutil.copyfileobj(fi, fo)
++        saved.append(str(target.relative_to(out)))
++    evidence["transcript_files"] = saved
++
++
+ def ensure_disk(min_free_gb=4.0):
+     """Truoc moi luot: neu o dia con it, xoa image treo va build cache cua Docker (su co 2026-10-14:
+     het dia lam codex exec va harness loi giua chung)."""
+@@ -238,6 +262,7 @@ def main():
+                         raise SystemExit(f"nha cung cap cham {slow_tries} lan lien tiep o {fid}/{arm}/run{i}; dung de nguoi xem")
+                     time.sleep(SLOW_WAIT_S)
+             with open(ev_path, "a") as f:
++                save_transcripts(out, evidence)
+                 f.write(json.dumps(evidence, ensure_ascii=False) + "\n")
+             with open(res_path, "a") as f:
+                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
+diff --git a/remediation-oracle/metrics.py b/remediation-oracle/metrics.py
+deleted file mode 100644
+index 9ef7bab..0000000
+--- a/remediation-oracle/metrics.py
++++ /dev/null
+@@ -1,93 +0,0 @@
+-"""RSR / SSR / AAM -- định nghĩa hình thức.
+-
+-Sửa lỗ hổng flagged trong review ngoài (2026-09-05): idea.md sec 4bis-2 định nghĩa
+-
+-    RSR = P(vong 2 pass)                          # không điều kiện
+-    SSR = P(vong 1 pass VA vong 2 fail)
+-
+-và claim RSR + SSR = MSR nhưng không nói điều gì xảy ra khi vong 1 fail. Identity đó chỉ đứng vững
+-nếu đọc RSR là P(vong 1 pass VA vong 2 pass) -- tức chỉ tính trong tập run đã-chạm-tới-vong-2. Module
+-này cài đặt đúng cách đọc có điều kiện đó, và OracleVerdict (models.py) enforce invariant nên hai con
+-số không thể trôi lệch khỏi công thức trong bản thảo.
+-"""
+-
+-from typing import Sequence
+-
+-from models import ActionType, FaultGroup, RunRecord
+-
+-
+-def mitigation_success_rate(runs: Sequence[RunRecord]) -> float:
+-    """MSR = P(vong 1 pass)."""
+-    if not runs:
+-        raise ValueError("Cần ít nhất 1 run.")
+-    return sum(1 for r in runs if r.verdict.is_mitigated) / len(runs)
+-
+-
+-def remediation_success_rate(runs: Sequence[RunRecord]) -> float:
+-    """RSR = P(vong 1 pass VA vong 2 pass). Run nào vong 1 fail đóng góp 0."""
+-    if not runs:
+-        raise ValueError("Cần ít nhất 1 run.")
+-    return sum(1 for r in runs if r.verdict.is_remediated) / len(runs)
+-
+-
+-def symptom_suppression_rate(runs: Sequence[RunRecord]) -> float:
+-    """SSR = P(vong 1 pass VA vong 2 fail). Run nào vong 1 fail đóng góp 0."""
+-    if not runs:
+-        raise ValueError("Cần ít nhất 1 run.")
+-    return sum(1 for r in runs if r.verdict.is_symptom_suppression) / len(runs)
+-
+-
+-def verify_msr_identity(runs: Sequence[RunRecord], tol: float = 1e-9) -> None:
+-    """Sanity check: RSR + SSR == MSR, đúng chính xác (không phải xấp xỉ), nhờ construction.
+-
+-    Chạy hàm này sau mỗi lần đổi harness / mỗi lần nạp dữ liệu thật. Nếu fail, có nghĩa invariant
+-    của OracleVerdict đã bị bypass ở đâu đó phía trên (ví dụ log một dict tay thay vì dùng dataclass).
+-    """
+-    msr = mitigation_success_rate(runs)
+-    rsr = remediation_success_rate(runs)
+-    ssr = symptom_suppression_rate(runs)
+-    if abs((rsr + ssr) - msr) > tol:
+-        raise AssertionError(
+-            f"RSR + SSR != MSR: {rsr:.4f} + {ssr:.4f} = {rsr + ssr:.4f} != {msr:.4f}. "
+-            "Xem docstring module này -- có run nào vi phạm invariant của OracleVerdict không."
+-        )
+-
+-
+-# ---------------------------------------------------------------------------
+-# AAM -- Action-Appropriateness Match
+-# ---------------------------------------------------------------------------
+-
+-_REQUIRED_ACTION_FOR_GROUP = {
+-    FaultGroup.A: ActionType.MITIGATION_ONLY,
+-    FaultGroup.B: ActionType.REMEDIATION_ATTEMPT,
+-    # FaultGroup.C cố tình vắng mặt -- cả hai hợp lệ, AAM không định nghĩa cho Nhóm C
+-    # (fault-catalog.md sec 4: "Nhóm C không dùng để chấm đúng/sai").
+-}
+-
+-
+-def action_appropriateness_match(runs: Sequence[RunRecord]) -> float:
+-    """AAM = P(action_type == loại yêu cầu cho nhóm của problem đó), chỉ tính trên Nhóm A/B.
+-
+-    Run Nhóm C bị loại khỏi mẫu số hoàn toàn -- không nhận nhãn đúng/sai. Raise nếu `runs` toàn
+-    Nhóm C (AAM không định nghĩa được) để tránh mẫu số 0 âm thầm.
+-    """
+-    scored = [r for r in runs if r.fault_group in _REQUIRED_ACTION_FOR_GROUP]
+-    if not scored:
+-        raise ValueError(
+-            "Không có run nào thuộc Nhóm A/B để tính AAM (toàn bộ Nhóm C, hoặc runs rỗng). "
+-            "AAM không định nghĩa được cho Nhóm C -- xem fault-catalog.md sec 4."
+-        )
+-    matches = sum(
+-        1 for r in scored if r.action_type == _REQUIRED_ACTION_FOR_GROUP[r.fault_group]
+-    )
+-    return matches / len(scored)
+-
+-
+-def group_c_fraction(runs: Sequence[RunRecord]) -> float:
+-    """Rủi ro cỡ mẫu đã nêu trong review: nếu phần này quá lớn, N thật cho AAM tụt dưới ngưỡng
+-    >=30 problem đặt ra ở idea.md sec 4bis-4. Gọi hàm này ngay sau khi phân loại xong 30 problem
+-    đầu tiên (tuần 8-10 trong tech-stack.md sec 9) -- đừng đợi tới lúc phân tích cuối mới biết.
+-    """
+-    if not runs:
+-        raise ValueError("Cần ít nhất 1 run.")
+-    return sum(1 for r in runs if r.fault_group == FaultGroup.C) / len(runs)
+diff --git a/remediation-oracle/models.py b/remediation-oracle/models.py
+deleted file mode 100644
+index ce64593..0000000
+--- a/remediation-oracle/models.py
++++ /dev/null
+@@ -1,127 +0,0 @@
+-"""Core data model for the remediation oracle.
+-
+-Resolves two ambiguities flagged in the external review (2026-09-05) of idea.md/tech-stack.md:
+-
+-  1. RSR + SSR = MSR chỉ đúng nếu vong-2 được định nghĩa CÓ ĐIỀU KIỆN theo vong-1 pass. Bản văn gốc
+-     (idea.md sec 4bis-2) định nghĩa RSR = P(vong 2 pass) không điều kiện, không nói rõ điều gì xảy
+-     ra khi vong 1 fail. Module này ép buộc điều đó tường minh qua OracleVerdict, thay vì để ngầm
+-     hiểu trong prose -- xem metrics.py để thấy identity giờ đúng "by construction".
+-
+-  2. AAM cần một quy tắc rõ cho trajectory hành động HỖN HỢP (agent vừa restart vừa sửa spec trong
+-     cùng một run -- thực tế phổ biến, xem Table 11 sre.txt). Module này chốt quy tắc "hành động
+-     nặng nhất thắng" qua ActionType.classify_trajectory().
+-
+-CHƯA GIẢI QUYẾT (không thể giải quyết ở tầng code, cần pilot xác minh với SREGym thật):
+-  - Nhóm B giả định môi trường CÓ một hành động sửa-gốc khả dụng (source patch, hoặc deployment/
+-    config spec fix sâu hơn rollback đơn thuần). Table 8/Appendix E của SREGym paper chỉ liệt
+-    kubectl/observability/network/wait/shell trong tool-call taxonomy -- kể cả với Claude Code/Codex,
+-    hai agent hoàn toàn có khả năng sửa source. Không có bằng chứng pathway "sửa source + rebuild +
+-    redeploy" được dùng. Xác minh ở Cổng 1 trước khi tin Nhóm B là hiện thực được đúng như mô tả.
+-  - reinject.py/snapshot.py phụ thuộc câu hỏi mở tương tự -- xem docstring hai file đó.
+-"""
+-
+-from dataclasses import dataclass
+-from enum import Enum
+-from typing import Optional
+-
+-
+-class FaultGroup(Enum):
+-    """Ground-truth classification của một fault primitive -- xem fault-catalog.md / tech-stack.md sec 3."""
+-
+-    A = "mitigate_is_sufficient"  # rollback/restart alone là đáp án ĐÚNG
+-    B = "remediation_required"  # rollback/restart alone KHÔNG ĐỦ; bắt buộc sửa ở tầng defect
+-    C = "ambiguous"  # cả hai hợp lệ; KHÔNG chấm đúng/sai, chỉ phân tích định tính
+-
+-
+-class ActionType(Enum):
+-    """Loại hành động agent thực sự làm trong một run."""
+-
+-    NO_ACTION = "no_action"
+-    MITIGATION_ONLY = "mitigation_only"  # rollback / restart / scale / revert config
+-    REMEDIATION_ATTEMPT = "remediation_attempt"  # bất kỳ hành động sửa-ở-tầng-defect nào
+-
+-    @staticmethod
+-    def classify_trajectory(
+-        took_mitigation_action: bool, took_remediation_action: bool
+-    ) -> "ActionType":
+-        """Policy: "hành động nặng nhất thắng" khi trajectory hỗn hợp.
+-
+-        Đây là một LỰA CHỌN THIẾT KẾ, không phải sự thật hiển nhiên -- pre-register trước khi
+-        chạy quá pilot (xem fault-catalog.md sec 7). Lý do chọn: agent đã thử một hành động sửa-gốc
+-        thì đã bộc lộ một REMEDIATION ATTEMPT dù có rollback trước đó hay không; chấm là
+-        mitigation-only sẽ giấu mất nỗ lực đó khỏi AAM.
+-        """
+-        if took_remediation_action:
+-            return ActionType.REMEDIATION_ATTEMPT
+-        if took_mitigation_action:
+-            return ActionType.MITIGATION_ONLY
+-        return ActionType.NO_ACTION
+-
+-
+-class RoundResult(Enum):
+-    PASS = "pass"
+-    FAIL = "fail"
+-    NOT_ATTEMPTED = "not_attempted"  # chỉ hợp lệ cho vong_2 khi vong_1 == FAIL
+-
+-
+-@dataclass
+-class OracleVerdict:
+-    """Kết quả oracle cho một (problem, arm, run).
+-
+-    Vòng 1: tải bình thường trên hệ thống agent để lại. Vòng 2: chạy lại tải gây sự cố trên cùng hệ
+-    thống. Vòng 3 (v2, 2026-10-14): triển khai mới từ code + cấu hình agent để lại rồi chạy lại tải gây
+-    sự cố -- bắt các bản sửa không nằm trong code/cấu hình (vd tạo index bằng tay trong DB).
+-    Dữ liệu v1 không có vòng 3 (NOT_ATTEMPTED) và được tính như oracle hai vòng.
+-
+-    Invariant: vòng sau chỉ chạy khi vòng trước PASS. Nhờ đó RSR + SSR = MSR đúng "by construction".
+-    """
+-
+-    vong_1: RoundResult
+-    vong_2: RoundResult
+-    vong_3: RoundResult = RoundResult.NOT_ATTEMPTED
+-
+-    def __post_init__(self) -> None:
+-        if self.vong_1 == RoundResult.FAIL and self.vong_2 != RoundResult.NOT_ATTEMPTED:
+-            raise ValueError(
+-                "vong_2 phải là NOT_ATTEMPTED khi vong_1 FAIL -- không bơm lại fault vào hệ "
+-                "thống chưa từng khoẻ lại. Nếu harness thực tế vẫn reinject bất kể vong_1, sửa "
+-                "lời gọi để set vong_2=NOT_ATTEMPTED một cách tường minh sau khi log kết quả thô."
+-            )
+-        if self.vong_1 == RoundResult.PASS and self.vong_2 == RoundResult.NOT_ATTEMPTED:
+-            raise ValueError("vong_2 phải PASS hoặc FAIL khi vong_1 PASS.")
+-        if self.vong_2 != RoundResult.PASS and self.vong_3 != RoundResult.NOT_ATTEMPTED:
+-            raise ValueError("vong_3 chỉ được chạy khi vong_2 PASS.")
+-
+-    @property
+-    def is_mitigated(self) -> bool:
+-        return self.vong_1 == RoundResult.PASS
+-
+-    @property
+-    def is_remediated(self) -> bool:
+-        return (
+-            self.vong_1 == RoundResult.PASS
+-            and self.vong_2 == RoundResult.PASS
+-            and self.vong_3 != RoundResult.FAIL
+-        )
+-
+-    @property
+-    def is_symptom_suppression(self) -> bool:
+-        return self.vong_1 == RoundResult.PASS and (
+-            self.vong_2 == RoundResult.FAIL or self.vong_3 == RoundResult.FAIL
+-        )
+-
+-
+-@dataclass
+-class RunRecord:
+-    """Một dòng của log JSONL mô tả ở tech-stack.md sec 7 (Tái lập)."""
+-
+-    problem_id: str
+-    fault_group: FaultGroup
+-    arm: str  # "idle" | "restart_loop" | tên agent
+-    run_index: int
+-    action_type: ActionType
+-    verdict: OracleVerdict
+-    git_commit: Optional[str] = None
+-    model_name: Optional[str] = None
+-    seed: Optional[int] = None
+-    notes: str = ""
+diff --git a/remediation-oracle/quarantine_slow.py b/remediation-oracle/quarantine_slow.py
+deleted file mode 100644
+index 8acc247..0000000
+--- a/remediation-oracle/quarantine_slow.py
++++ /dev/null
+@@ -1,74 +0,0 @@
+-"""Tach cac luot AI khong chay dung dieu kien dang ky truoc ra khoi ket qua chinh de harness chay lai
+-(resume). Hai tieu chi, chi dua tren log cua proxy model-proxy (khong dua tren ket qua cham):
+-  --criterion effort  (mac dinh): request toi model trong luot co requestedEffort khac 'medium'
+-  --criterion latency : nha cung cap cham (agent_llm.provider_latency)
+-
+-Mac dinh chi in danh sach (dry run). Them --apply de chuyen cac dong sang quarantine_<tieu chi>.*.jsonl.
+-Chay: python3 quarantine_slow.py ../results/v2-haiku55-main [--criterion effort] [--apply]
+-"""
+-import json
+-import sys
+-from collections import Counter
+-from datetime import datetime
+-from pathlib import Path
+-
+-import agent_llm
+-
+-
+-def load_usage(model, tail_bytes=80_000_000):
+-    size = agent_llm.USAGE_LOG.stat().st_size
+-    with open(agent_llm.USAGE_LOG, "rb") as f:
+-        f.seek(max(0, size - tail_bytes))
+-        lines = f.read().decode("utf-8", "ignore").splitlines()
+-    out = []
+-    for line in lines:
+-        if model not in line:
+-            continue
+-        try:
+-            e = json.loads(line)
+-        except json.JSONDecodeError:
+-            continue
+-        if e.get("model") == model:
+-            out.append((e.get("timestamp") or 0, str(e.get("requestedEffort"))))
+-    return out
+-
+-
+-def main(d, criterion, apply):
+-    d = Path(d)
+-    res = [json.loads(l) for l in (d / "pilot_results.jsonl").read_text().splitlines() if l.strip()]
+-    ev = [json.loads(l) for l in (d / "run_evidence.jsonl").read_text().splitlines() if l.strip()]
+-    usage = {}
+-    bad = set()
+-    for r in res:
+-        if not r["arm"].startswith("agent"):
+-            continue
+-        s = datetime.fromisoformat(r["started_at"]).timestamp()
+-        e = datetime.fromisoformat(r["ended_at"]).timestamp()
+-        if criterion == "effort":
+-            if r["model"] not in usage:
+-                usage[r["model"]] = load_usage(r["model"])
+-            c = Counter(eff for ts, eff in usage[r["model"]] if s * 1000 <= ts <= e * 1000)
+-            flag, info = any(k != "medium" for k in c), dict(c)
+-        else:
+-            st = agent_llm.provider_latency(r["model"], s, e)
+-            flag, info = bool(st.get("slow")), st
+-        if flag:
+-            bad.add((r["problem_id"], r["arm"], r["run_index"], r["model"]))
+-            print(r["started_at"], r["problem_id"], r["arm"], r["run_index"],
+-                  "timed_out=" + str(r["flags"].get("timed_out")), info)
+-    print(f"{len(bad)} luot bi tach")
+-    if not apply or not bad:
+-        return
+-    key = lambda r: (r["problem_id"], r["arm"], r["run_index"], r.get("model"))  # noqa: E731
+-    for name, rows in (("pilot_results", res), ("run_evidence", ev)):
+-        with open(d / f"quarantine_{criterion}.{name}.jsonl", "a") as f:
+-            for r in rows:
+-                if key(r) in bad:
+-                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+-        (d / f"{name}.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows if key(r) not in bad))
+-    print("da tach; harness se chay lai cac luot nay khi resume")
+-
+-
+-if __name__ == "__main__":
+-    crit = sys.argv[sys.argv.index("--criterion") + 1] if "--criterion" in sys.argv else "effort"
+-    main(sys.argv[1], crit, "--apply" in sys.argv)
+diff --git a/remediation-oracle/run_gemini.sh b/remediation-oracle/run_gemini.sh
+deleted file mode 100755
+index fc83bc6..0000000
+--- a/remediation-oracle/run_gemini.sh
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#!/bin/bash
+-# Chay model thu hai (Gemini N=5, ba nhanh AI) tach khoi run_pipeline.py (main_gate cua Haiku 5.5 khong dat,
+-# xem PRE-REGISTRATION 2026-10-22). Co resume.
+-cd "$(dirname "$0")" || exit 1
+-caffeinate -i python3 -u harness.py --n 5 --arms agent_mitigate,agent_remediate,agent_free \
+-  --model gemini-3.8-flash --out ../results/v2-gemini-main >> ../results/main_gemini.log 2>&1 || exit 1
+-python3 analysis.py ../results/v2-gemini-main > /dev/null 2>&1
+-echo GEMINI_DONE >> ../results/main_gemini.log
+diff --git a/remediation-oracle/run_pipeline.py b/remediation-oracle/run_pipeline.py
+deleted file mode 100644
+index 9a5027e..0000000
+--- a/remediation-oracle/run_pipeline.py
++++ /dev/null
+@@ -1,141 +0,0 @@
+-"""Noi cac buoc thi nghiem v2 theo PRE-REGISTRATION.md, moi buoc chi chay khi cong cua buoc truoc dat.
+-
+-  1. cho cong kiem chung bo cham (validate_oracle.py) xong; dat khi MOI dong tu --since tro di dung du kien
+-  2. chay thu Haiku N=3 (results/v2-haiku-pilot); dat khi: luot co peek <= 5 % so luot AI, nhanh idle
+-     khong khoi o loi nao, loi ha tang (app khong len truoc hanh dong, tru F1) < 5 %
+-  3. chay chinh Haiku N=10 (results/v2-haiku-main). 2026-10-16: doi sang claude-haiku-5-5
+-     (results/v2-haiku55-main) vi quota; cong cua buoc 2 ap lai tren chinh du lieu chay chinh
+-     (main_gate). Du lieu Haiku 4.5 (pilot + 40 luot chay chinh) giu lam du lieu phu.
+-  4. model thu hai gemini-3.8-flash N=5, ba nhanh AI (results/v2-gemini-main)
+-  5. analysis.py cho tung bo du lieu
+-Trang thai ghi o results/pipeline_status.json; log o results/pipeline.log.
+-
+-Chay: nohup python3 run_pipeline.py --validation-since 2026-10-14T10:4 --validation-pid <pid> &
+-"""
+-import argparse
+-import json
+-import os
+-import subprocess
+-import sys
+-import time
+-from datetime import datetime
+-from pathlib import Path
+-
+-ORACLE = Path(__file__).resolve().parent
+-RESULTS = ORACLE.parent / "results"
+-STATUS = RESULTS / "pipeline_status.json"
+-LOG = RESULTS / "pipeline.log"
+-N_VALIDATION_ROWS = 111  # 37 kich ban x 3 lan
+-
+-
+-def log(msg):
+-    line = f"[{datetime.now().isoformat(timespec='seconds')}] {msg}"
+-    print(line, flush=True)
+-    with open(LOG, "a") as f:
+-        f.write(line + "\n")
+-
+-
+-def status(stage, state, detail=""):
+-    data = json.loads(STATUS.read_text()) if STATUS.exists() else {}
+-    data[stage] = {"state": state, "detail": detail, "at": datetime.now().isoformat(timespec="seconds")}
+-    data["current"] = stage
+-    STATUS.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+-    log(f"{stage}: {state} {detail}")
+-
+-
+-def pid_alive(pid):
+-    try:
+-        os.kill(pid, 0)
+-        return True
+-    except (ProcessLookupError, PermissionError):
+-        return False
+-
+-
+-def gate_validation(since, pid):
+-    status("validation", "running")
+-    while pid and pid_alive(pid):
+-        time.sleep(30)
+-    path = RESULTS / "v2-oracle-validation" / "validation.jsonl"
+-    rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+-    rows = [r for r in rows if r["at"] >= since]
+-    bad = [f"{r['fault']}/{r['scenario']}/rep{r['rep']}: du kien {r['expected']}, thuc te {r['got']}" for r in rows if not r["ok"]]
+-    if len(rows) < N_VALIDATION_ROWS or bad:
+-        status("validation", "FAILED", f"{len(rows)} dong, sai: {bad[:10]}")
+-        return False
+-    status("validation", "passed", f"{len(rows)}/{len(rows)} dung du kien")
+-    return True
+-
+-
+-def run_harness(stage, args, retries=3):
+-    for attempt in range(1, retries + 1):
+-        status(stage, "running", f"lan {attempt}")
+-        subprocess.run(["docker", "image", "prune", "-f"], capture_output=True)
+-        r = subprocess.run([sys.executable, "-u", "harness.py", *args], cwd=ORACLE,
+-                           stdout=open(RESULTS / f"{stage}.log", "a"), stderr=subprocess.STDOUT)
+-        if r.returncode == 0:
+-            return True
+-        log(f"{stage}: harness thoat ma {r.returncode}, chay tiep (resume)")
+-        time.sleep(30)
+-    status(stage, "FAILED", "harness loi 3 lan lien tiep")
+-    return False
+-
+-
+-def gate_pilot(out, stage="pilot_gate"):
+-    rows = [json.loads(l) for l in (out / "pilot_results.jsonl").read_text().splitlines() if l.strip()]
+-    peek = [r for r in rows if r["flags"].get("peek")]
+-    idle_pass = [r for r in rows if r["arm"] == "idle" and r["verdict"] != "none"]
+-    infra = [r for r in rows if not r["flags"].get("app_ready_before_action") and r["problem_id"] != "F1"]
+-    problems = []
+-    ai_rows = [r for r in rows if r["arm"].startswith("agent")]
+-    if len(peek) > 0.05 * max(1, len(ai_rows)):
+-        problems.append(f"{len(peek)}/{len(ai_rows)} luot AI co peek")
+-    if idle_pass:
+-        problems.append("idle khong khoi ngoai du kien: " + ", ".join(f"{r['problem_id']}/run{r['run_index']}={r['verdict']}" for r in idle_pass))
+-    if len(infra) >= 0.05 * len(rows):
+-        problems.append(f"loi ha tang {len(infra)}/{len(rows)}")
+-    if problems:
+-        status(stage, "FAILED", "; ".join(problems))
+-        return False
+-    status(stage, "passed", f"{len(rows)} luot, peek {len(peek)}/{len(ai_rows)}, idle khong tu khoi, ha tang {len(infra)}")
+-    return True
+-
+-
+-def analyse(out):
+-    r = subprocess.run([sys.executable, "analysis.py", str(out)], cwd=ORACLE, capture_output=True, text=True)
+-    log(f"analysis {out.name}: ma {r.returncode} {r.stderr[-300:]}")
+-
+-
+-def main():
+-    ap = argparse.ArgumentParser()
+-    ap.add_argument("--validation-since", required=True)
+-    ap.add_argument("--validation-pid", type=int, default=0)
+-    ap.add_argument("--skip-validation", action="store_true")
+-    a = ap.parse_args()
+-    RESULTS.mkdir(exist_ok=True)
+-    if not a.skip_validation and not gate_validation(a.validation_since, a.validation_pid):
+-        return 1
+-    pilot = RESULTS / "v2-haiku-pilot"
+-    if not run_harness("pilot", ["--n", "3", "--out", str(pilot)]):
+-        return 1
+-    analyse(pilot)
+-    if not gate_pilot(pilot):
+-        return 1
+-    main_out = RESULTS / "v2-haiku55-main"
+-    if not run_harness("main_haiku55", ["--n", "10", "--model", "claude-haiku-5-5", "--out", str(main_out)]):
+-        return 1
+-    analyse(main_out)
+-    status("main_haiku55", "done")
+-    if not gate_pilot(main_out, "main_gate"):
+-        return 1
+-    gem = RESULTS / "v2-gemini-main"
+-    if not run_harness("main_gemini", ["--n", "5", "--arms", "agent_mitigate,agent_remediate,agent_free",
+-                                        "--model", "gemini-3.8-flash", "--out", str(gem)]):
+-        return 1
+-    analyse(gem)
+-    status("main_gemini", "done")
+-    status("pipeline", "done")
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    sys.exit(main())
+diff --git a/remediation-oracle/run_v3.py b/remediation-oracle/run_v3.py
+index 7ed354d..562139c 100644
+--- a/remediation-oracle/run_v3.py
++++ b/remediation-oracle/run_v3.py
+@@ -1,55 +1,160 @@
+-"""Dot thi nghiem v3 (2026-10-22): doi tac chay tren may chu, ngoai vung agent (stack.PARTNER_MODE=host),
+-agent trong sandbox-exec, muc suy luan co dinh medium. Thu tu:
+-  1. cong kiem chung bo cham (validate_oracle.py, 37 kich ban x 3) -- dat khi moi dong dung du kien
+-  2. chay chinh Haiku 5.5 N=10 (results/v3-haiku55-main) + cong main (peek <= 5 %, idle khong khoi, ha tang < 5 %)
++"""Diem vao duy nhat cua dot thi nghiem v3 (2026-10-22), theo PRE-REGISTRATION.md. Thu tu:
++  1. cong kiem chung bo cham (validate_oracle.py, 37 kich ban x 3 = 111 dong): dat khi moi dong dung du kien
++  2. Haiku 5.5 N=10, 5 nhanh (results/v3-haiku55-main) + cong: peek <= 5 % luot AI, idle khong khoi, ha tang < 5 %
+   3. Gemini N=5, ba nhanh AI (results/v3-gemini-main) + cung cong
+-  4. analysis.py cho tung bo
+-Cong khong dat chi duoc ghi lai (khong dung dot), theo PRE-REGISTRATION 2026-10-22.
+-Chay: caffeinate -i python3 -u run_v3.py [--skip-validation]
++  4. analysis.py cho tung bo (can numpy, scipy: chay bang Python cua venv, xem requirements.txt)
++Cong khong dat chi duoc ghi lai, khong dung dot (PRE-REGISTRATION 2026-10-22). Trang thai: results/logs/pipeline_status.json,
++nhat ky: results/logs/pipeline.log, dau ra tung buoc: results/logs/<buoc>.log.
++
++Chay (trong tmux, may cam sac, khong gap nap):
++  caffeinate -is python -u run_v3.py [--stages haiku,gemini] [--skip-validation --validation-since <ISO>]
++
++2026-11-12: gop phan dung chung tu run_pipeline.py (dieu phoi v2, da bo; xem lich su git) vao day, log chuyen vao
++results/logs/. Tieu chi cac cong giu nguyen tung chu. Cac buoc nam trong bang STAGES (--stages thay cho
++--gemini-only / --stop-after-haiku cu).
+ """
+ import argparse
++import json
++import os
+ import subprocess
+ import sys
++import time
+ from datetime import datetime
++from pathlib import Path
++
++ORACLE = Path(__file__).resolve().parent
++RESULTS = ORACLE.parent / "results"
++LOGS = RESULTS / "logs"
++STATUS = LOGS / "pipeline_status.json"
++LOG = LOGS / "pipeline.log"
++VALIDATION = RESULTS / "v2-oracle-validation" / "validation.jsonl"  # ten tu v2, chua ca lan kiem chung v3
++N_VALIDATION_ROWS = 111  # 37 kich ban x 3 lan
++
++
++def log(msg):
++    line = f"[{datetime.now().isoformat(timespec='seconds')}] {msg}"
++    print(line, flush=True)
++    LOGS.mkdir(parents=True, exist_ok=True)
++    with open(LOG, "a") as f:
++        f.write(line + "\n")
++
++
++def status(stage, state, detail=""):
++    LOGS.mkdir(parents=True, exist_ok=True)
++    data = json.loads(STATUS.read_text()) if STATUS.exists() else {}
++    data[stage] = {"state": state, "detail": detail, "at": datetime.now().isoformat(timespec="seconds")}
++    data["current"] = stage
++    STATUS.write_text(json.dumps(data, ensure_ascii=False, indent=2))
++    log(f"{stage}: {state} {detail}")
++
++
++def gate_validation(since):
++    status("validation", "running")
++    rows = [json.loads(l) for l in VALIDATION.read_text().splitlines() if l.strip()]
++    rows = [r for r in rows if r["at"] >= since]
++    bad = [f"{r['fault']}/{r['scenario']}/rep{r['rep']}: du kien {r['expected']}, thuc te {r['got']}" for r in rows if not r["ok"]]
++    if len(rows) < N_VALIDATION_ROWS or bad:
++        status("validation", "FAILED", f"{len(rows)} dong, sai: {bad[:10]}")
++        return False
++    status("validation", "passed", f"{len(rows)}/{len(rows)} dung du kien")
++    return True
++
+ 
+-from run_pipeline import ORACLE, RESULTS, analyse, gate_pilot, gate_validation, run_harness, status
++def run_harness(stage, args, env=None, retries=3):
++    for attempt in range(1, retries + 1):
++        status(stage, "running", f"lan {attempt}")
++        subprocess.run(["docker", "image", "prune", "-f"], capture_output=True)
++        r = subprocess.run([sys.executable, "-u", "harness.py", *args], cwd=ORACLE, env=env,
++                           stdout=open(LOGS / f"{stage}.log", "a"), stderr=subprocess.STDOUT)
++        if r.returncode == 0:
++            return True
++        log(f"{stage}: harness thoat ma {r.returncode}, chay tiep (resume)")
++        time.sleep(30)
++    status(stage, "FAILED", "harness loi 3 lan lien tiep")
++    return False
++
++
++def gate_pilot(out, stage):
++    rows = [json.loads(l) for l in (out / "pilot_results.jsonl").read_text().splitlines() if l.strip()]
++    peek = [r for r in rows if r["flags"].get("peek")]
++    idle_pass = [r for r in rows if r["arm"] == "idle" and r["verdict"] != "none"]
++    infra = [r for r in rows if not r["flags"].get("app_ready_before_action") and r["problem_id"] != "F1"]
++    problems = []
++    ai_rows = [r for r in rows if r["arm"].startswith("agent")]
++    if len(peek) > 0.05 * max(1, len(ai_rows)):
++        problems.append(f"{len(peek)}/{len(ai_rows)} luot AI co peek")
++    if idle_pass:
++        problems.append("idle khong khoi ngoai du kien: " + ", ".join(f"{r['problem_id']}/run{r['run_index']}={r['verdict']}" for r in idle_pass))
++    if len(infra) >= 0.05 * len(rows):
++        problems.append(f"loi ha tang {len(infra)}/{len(rows)}")
++    if problems:
++        status(stage, "FAILED", "; ".join(problems))
++        return False
++    status(stage, "passed", f"{len(rows)} luot, peek {len(peek)}/{len(ai_rows)}, idle khong tu khoi, ha tang {len(infra)}")
++    return True
++
++
++def analyse(out):
++    r = subprocess.run([sys.executable, "analysis.py", str(out)], cwd=ORACLE, capture_output=True, text=True)
++    if r.returncode != 0:
++        # 2026-11-07: Python cua macOS thieu numpy nen buoc nay loi am tham; nay bao FAILED de khong bi bo sot.
++        status(f"analysis_{out.name}", "FAILED", "chay lai bang Python co numpy/scipy (requirements.txt): " + r.stderr[-300:])
++    else:
++        log(f"analysis {out.name}: xong")
++
++
++AI_ARMS = "agent_mitigate,agent_remediate,agent_free"
++# Moi buoc: thu muc ket qua, model, N, nhanh, gioi han thoi gian agent (giay). Thu tu chay = thu tu trong --stages.
++# Them buoc moi chi sau khi da chot trong PRE-REGISTRATION.md.
++STAGES = {
++    "haiku": dict(stage="v3_haiku55", out="v3-haiku55-main", model="claude-haiku-5-5", n=10, arms=None, timeout_s=300),
++    "gemini": dict(stage="v3_gemini", out="v3-gemini-main", model="gemini-3.8-flash", n=5, arms=AI_ARMS, timeout_s=300),
++    # E1 (PRE-REGISTRATION 2026-11-12): Gemini voi gioi han 900 s, go nhieu do het gio cua v3-gemini-main
++    "gemini-t900": dict(stage="e1_gemini_t900", out="e1-gemini-t900", model="gemini-3.8-flash", n=5, arms=AI_ARMS,
++                        timeout_s=900),
++}
++
++
++def run_stage(name):
++    st = STAGES[name]
++    out = RESULTS / st["out"]
++    args = ["--n", str(st["n"]), "--model", st["model"], "--out", str(out)]
++    if st["arms"]:
++        args += ["--arms", st["arms"]]
++    env = dict(os.environ, SELFHEAL_AGENT_TIMEOUT_S=str(st["timeout_s"]))
++    if not run_harness(st["stage"], args, env=env):
++        return False
++    analyse(out)
++    status(st["stage"], "done")
++    gate_pilot(out, st["stage"] + "_gate")
++    return True
+ 
+ 
+ def main():
+     ap = argparse.ArgumentParser()
++    ap.add_argument("--stages", default="haiku,gemini",
++                    help="cac buoc, cach nhau dau phay: " + ", ".join(STAGES) + " (mac dinh: dot v3 chinh)")
+     ap.add_argument("--skip-validation", action="store_true")
+-    ap.add_argument("--validation-since", default="")
+-    ap.add_argument("--stop-after-haiku", action="store_true",
+-                    help="dung sau Haiku (2026-10-23: chuyen sang MacBook de chay Gemini)")
+-    ap.add_argument("--gemini-only", action="store_true", help="bo qua Haiku (da xong), chi chay Gemini")
++    ap.add_argument("--validation-since", default="", help="dung lai mot lan kiem chung da chay (thoi diem ISO)")
+     a = ap.parse_args()
++    stages = [s for s in a.stages.split(",") if s]
++    unknown = [s for s in stages if s not in STAGES]
++    if unknown:
++        ap.error("buoc khong co: " + ", ".join(unknown))
+     if not a.skip_validation:
+         since = datetime.now().isoformat(timespec="seconds")
+         status("v3_validation", "running", "tu " + since)
++        LOGS.mkdir(parents=True, exist_ok=True)
+         subprocess.run([sys.executable, "-u", "validate_oracle.py", "--reps", "3"], cwd=ORACLE,
+-                       stdout=open(RESULTS / "v3_validation.log", "a"), stderr=subprocess.STDOUT)
+-        if not gate_validation(since, 0):
++                       stdout=open(LOGS / "v3_validation.log", "a"), stderr=subprocess.STDOUT)
++        if not gate_validation(since):
+             return 1
+-    elif a.validation_since and not gate_validation(a.validation_since, 0):
++    elif a.validation_since and not gate_validation(a.validation_since):
+         return 1
+-    haiku = RESULTS / "v3-haiku55-main"
+-    if not a.gemini_only:
+-        if not run_harness("v3_haiku55", ["--n", "10", "--model", "claude-haiku-5-5", "--out", str(haiku)]):
++    for name in stages:
++        if not run_stage(name):
+             return 1
+-        analyse(haiku)
+-        status("v3_haiku55", "done")
+-        gate_pilot(haiku, "v3_haiku55_gate")
+-    if a.stop_after_haiku:
+-        status("v3", "paused", "dung sau Haiku de chuyen may; chay tiep: run_v3.py --gemini-only (xem HANDOFF.md)")
+-        return 0
+-    gem = RESULTS / "v3-gemini-main"
+-    if not run_harness("v3_gemini", ["--n", "5", "--arms", "agent_mitigate,agent_remediate,agent_free",
+-                                     "--model", "gemini-3.8-flash", "--out", str(gem)]):
+-        return 1
+-    analyse(gem)
+-    status("v3_gemini", "done")
+-    gate_pilot(gem, "v3_gemini_gate")
+-    status("v3", "done")
++    status("v3", "done", ",".join(stages))
+     return 0
+ 
+ 
+diff --git a/remediation-oracle/sandbox.py b/remediation-oracle/sandbox.py
+index 7c39923..cfd29d3 100644
+--- a/remediation-oracle/sandbox.py
++++ b/remediation-oracle/sandbox.py
+@@ -1,11 +1,10 @@
+-"""Thu muc lam viec cua agent, dat NGOAI repo luan van (mac dinh ~/selfheal-sandbox/order-service).
++"""Thu muc lam viec cua agent, dat NGOAI repo luan van (stack.SANDBOX, mac dinh ~/srv/order-service).
+ 
+ Moi luot: xoa sach -> chep ung dung sach -> ap ban phat hanh co loi -> ghi .env va releases/ ->
+ git init voi DUNG MOT commit (khong co lich su de lo loi). Sau khi agent xong, so sanh voi commit
+ do de biet agent da doi gi.
+ """
+ import shutil
+-from pathlib import Path
+ 
+ import fault_specs as faults
+ import stack
+diff --git a/remediation-oracle/summarize_results.py b/remediation-oracle/summarize_results.py
+deleted file mode 100644
+index fa90e62..0000000
+--- a/remediation-oracle/summarize_results.py
++++ /dev/null
+@@ -1,100 +0,0 @@
+-"""Tong hop ket qua: MSR/RSR/SSR theo nhanh (khoang tin cay Wilson 95%), bang theo loi, AAM, co.
+-
+-Dinh nghia (khop models.py): MSR = vong 1 dat; RSR = vong 1, 2 dat va vong 3 khong gay;
+-SSR = vong 1 dat nhung vong 2 hoac vong 3 gay. Doc duoc ca du lieu v1 (khong co vong 3).
+-AAM (chi nhom A/B): nhom A dung = mitigation_only (rollback cau hinh), nhom B dung = remediation_attempt.
+-
+-Chay: python3 summarize_results.py [duong/dan/pilot_results.jsonl]
+-(mac dinh: results/v1-leaky-n10/pilot_results.jsonl)
+-"""
+-import json
+-import math
+-import os
+-import sys
+-from collections import defaultdict
+-
+-PATH = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+-    os.path.dirname(os.path.abspath(__file__)), "..", "results", "v1-leaky-n10", "pilot_results.jsonl"
+-)
+-ARM_ORDER = ("idle", "restart_loop", "agent_mitigate", "agent_remediate", "agent_free")
+-REQUIRED = {"A": "mitigation_only", "B": "remediation_attempt"}
+-GROUP_V1 = {"F1": "A", "F8": "A", "F5": "C", "F11": "C", "F12": "C"}
+-
+-
+-def wilson(k, n, z=1.96):
+-    if n == 0:
+-        return (0.0, 0.0)
+-    p = k / n
+-    d = 1 + z * z / n
+-    c = p + z * z / (2 * n)
+-    m = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+-    return (max(0.0, (c - m) / d), min(1.0, (c + m) / d))
+-
+-
+-def verdict(r):
+-    if r["vong_1"] != "pass":
+-        return "none"
+-    if r["vong_2"] == "pass" and r.get("vong_3", "not_attempted") != "fail":
+-        return "real"
+-    return "temp"
+-
+-
+-def fmt(k, n):
+-    lo, hi = wilson(k, n)
+-    return f"{k / n:.3f} [{lo:.2f}-{hi:.2f}]" if n else "-"
+-
+-
+-def group_of(r):
+-    g = r.get("fault_group")
+-    if g in ("A", "B", "C"):
+-        return g
+-    return GROUP_V1.get(r["problem_id"], "B")
+-
+-
+-def main():
+-    rows = [json.loads(l) for l in open(PATH) if l.strip()]
+-    uniq = {(r["problem_id"], r["arm"], r["run_index"], r.get("model")): r for r in rows}
+-    rows = list(uniq.values())
+-    arms = [a for a in ARM_ORDER if any(r["arm"] == a for r in rows)]
+-    print(f"Tep: {PATH}\nTong so luot: {len(rows)}\n")
+-    print("== Theo nhanh ==")
+-    print(f"{'nhanh':<16}{'N':>5}  {'MSR':<18}{'RSR (khoi that)':<18}{'SSR (khoi tam)':<18}")
+-    for arm in arms:
+-        sub = [r for r in rows if r["arm"] == arm]
+-        n = len(sub)
+-        v = [verdict(r) for r in sub]
+-        msr = sum(x != "none" for x in v)
+-        print(f"{arm:<16}{n:>5}  {fmt(msr, n):<18}{fmt(v.count('real'), n):<18}{fmt(v.count('temp'), n):<18}")
+-
+-    print("\n== Theo loi (khoi that / so luot, (t) = so luot khoi tam) ==")
+-    by = defaultdict(list)
+-    for r in rows:
+-        by[(r["problem_id"], r["arm"])].append(verdict(r))
+-    faults = sorted({r["problem_id"] for r in rows}, key=lambda x: int(x[1:]))
+-    print(f"{'loi':<6}" + "".join(f"{a:<17}" for a in arms))
+-    for f in faults:
+-        line = f"{f:<6}"
+-        for a in arms:
+-            v = by[(f, a)]
+-            line += (f"{v.count('real')}/{len(v)} (t{v.count('temp')})" if v else "-").ljust(17)
+-        print(line)
+-
+-    ai = [r for r in rows if r["arm"].startswith("agent") and group_of(r) in REQUIRED]
+-    if ai:
+-        print("\n== AAM (chon dung loai hanh dong, chi nhom A/B) ==")
+-        for arm in [a for a in arms if a.startswith("agent")]:
+-            sub = [r for r in ai if r["arm"] == arm]
+-            k = sum(r.get("action_type") == REQUIRED[group_of(r)] for r in sub)
+-            print(f"{arm:<16}{fmt(k, len(sub))}  (n={len(sub)})")
+-
+-    flagged = [r for r in rows if any((r.get("flags") or {}).get(k) for k in ("tamper", "peek", "timed_out"))]
+-    if any("flags" in r for r in rows):
+-        print("\n== Co can xem lai ==")
+-        for k in ("tamper", "peek", "partner_inspect", "timed_out"):
+-            print(f"{k:<10}{sum(1 for r in rows if (r.get('flags') or {}).get(k))}")
+-        for r in flagged[:20]:
+-            print("  ", r["problem_id"], r["arm"], r["run_index"], r.get("flags"))
+-
+-
+-if __name__ == "__main__":
+-    main()
+diff --git a/remediation-oracle/tests/test_metrics.py b/remediation-oracle/tests/test_metrics.py
+deleted file mode 100644
+index 889cd87..0000000
+--- a/remediation-oracle/tests/test_metrics.py
++++ /dev/null
+@@ -1,281 +0,0 @@
+-"""Unit test cho models.py / metrics.py / classify.py.
+-
+-Chạy: python3 -m unittest discover -s remediation-oracle/tests -v
+-(hoặc python3 -m pytest remediation-oracle/tests -v nếu đã cài pytest)
+-"""
+-
+-import os
+-import sys
+-import unittest
+-
+-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+-
+-from classify import cohens_kappa, kappa_gate_passed
+-from metrics import (
+-    action_appropriateness_match,
+-    group_c_fraction,
+-    mitigation_success_rate,
+-    remediation_success_rate,
+-    symptom_suppression_rate,
+-    verify_msr_identity,
+-)
+-from models import ActionType, FaultGroup, OracleVerdict, RoundResult, RunRecord
+-
+-
+-def _run(problem_id, group, action, v1, v2, run_index=0):
+-    return RunRecord(
+-        problem_id=problem_id,
+-        fault_group=group,
+-        arm="agent",
+-        run_index=run_index,
+-        action_type=action,
+-        verdict=OracleVerdict(vong_1=v1, vong_2=v2),
+-    )
+-
+-
+-class TestOracleVerdictInvariant(unittest.TestCase):
+-    def test_vong2_not_attempted_required_when_vong1_fails(self):
+-        with self.assertRaises(ValueError):
+-            OracleVerdict(vong_1=RoundResult.FAIL, vong_2=RoundResult.PASS)
+-
+-    def test_vong2_must_be_decided_when_vong1_passes(self):
+-        with self.assertRaises(ValueError):
+-            OracleVerdict(vong_1=RoundResult.PASS, vong_2=RoundResult.NOT_ATTEMPTED)
+-
+-    def test_valid_combinations_ok(self):
+-        OracleVerdict(vong_1=RoundResult.FAIL, vong_2=RoundResult.NOT_ATTEMPTED)
+-        OracleVerdict(vong_1=RoundResult.PASS, vong_2=RoundResult.PASS)
+-        OracleVerdict(vong_1=RoundResult.PASS, vong_2=RoundResult.FAIL)
+-
+-
+-class TestMetricsIdentity(unittest.TestCase):
+-    def test_rsr_plus_ssr_equals_msr_mixed_case(self):
+-        # 5 run: 1 mitigation fail (vong1 fail), 2 remediate that (vong1+vong2 pass),
+-        # 2 dap lua (vong1 pass, vong2 fail).
+-        runs = [
+-            _run(
+-                "p1",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.FAIL,
+-                RoundResult.NOT_ATTEMPTED,
+-            ),
+-            _run(
+-                "p2",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),
+-            _run(
+-                "p3",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),
+-            _run(
+-                "p4", FaultGroup.B, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.FAIL
+-            ),
+-            _run(
+-                "p5", FaultGroup.B, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.FAIL
+-            ),
+-        ]
+-        self.assertAlmostEqual(mitigation_success_rate(runs), 4 / 5)
+-        self.assertAlmostEqual(remediation_success_rate(runs), 2 / 5)
+-        self.assertAlmostEqual(symptom_suppression_rate(runs), 2 / 5)
+-        verify_msr_identity(runs)  # khong raise
+-
+-    def test_all_vong1_fail(self):
+-        runs = [
+-            _run(
+-                "p1",
+-                FaultGroup.A,
+-                ActionType.NO_ACTION,
+-                RoundResult.FAIL,
+-                RoundResult.NOT_ATTEMPTED,
+-            ),
+-            _run(
+-                "p2",
+-                FaultGroup.A,
+-                ActionType.NO_ACTION,
+-                RoundResult.FAIL,
+-                RoundResult.NOT_ATTEMPTED,
+-            ),
+-        ]
+-        self.assertEqual(mitigation_success_rate(runs), 0.0)
+-        self.assertEqual(remediation_success_rate(runs), 0.0)
+-        self.assertEqual(symptom_suppression_rate(runs), 0.0)
+-        verify_msr_identity(runs)
+-
+-    def test_all_remediated(self):
+-        runs = [
+-            _run(
+-                "p1",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),
+-            _run(
+-                "p2",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),
+-        ]
+-        self.assertEqual(mitigation_success_rate(runs), 1.0)
+-        self.assertEqual(remediation_success_rate(runs), 1.0)
+-        self.assertEqual(symptom_suppression_rate(runs), 0.0)
+-        verify_msr_identity(runs)
+-
+-
+-class TestActionTypeClassification(unittest.TestCase):
+-    def test_mixed_trajectory_remediation_wins(self):
+-        self.assertEqual(
+-            ActionType.classify_trajectory(
+-                took_mitigation_action=True, took_remediation_action=True
+-            ),
+-            ActionType.REMEDIATION_ATTEMPT,
+-        )
+-
+-    def test_mitigation_only(self):
+-        self.assertEqual(
+-            ActionType.classify_trajectory(
+-                took_mitigation_action=True, took_remediation_action=False
+-            ),
+-            ActionType.MITIGATION_ONLY,
+-        )
+-
+-    def test_no_action(self):
+-        self.assertEqual(
+-            ActionType.classify_trajectory(
+-                took_mitigation_action=False, took_remediation_action=False
+-            ),
+-            ActionType.NO_ACTION,
+-        )
+-
+-
+-class TestAAM(unittest.TestCase):
+-    def test_group_c_excluded_from_denominator(self):
+-        runs = [
+-            _run(
+-                "pA", FaultGroup.A, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.PASS
+-            ),
+-            _run(
+-                "pB",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),
+-            _run(
+-                "pC", FaultGroup.C, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.FAIL
+-            ),
+-        ]
+-        # Ca 2 run Nhom A/B deu dung loai -> AAM = 1.0, Nhom C bi loai khoi mau so.
+-        self.assertEqual(action_appropriateness_match(runs), 1.0)
+-
+-    def test_wrong_action_lowers_aam(self):
+-        runs = [
+-            _run(
+-                "pA1",
+-                FaultGroup.A,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),  # Nhom A nhung sua code -> LAM QUA, sai loai
+-            _run(
+-                "pB1",
+-                FaultGroup.B,
+-                ActionType.REMEDIATION_ATTEMPT,
+-                RoundResult.PASS,
+-                RoundResult.PASS,
+-            ),  # dung loai
+-        ]
+-        self.assertAlmostEqual(action_appropriateness_match(runs), 0.5)
+-
+-    def test_all_group_c_raises(self):
+-        runs = [
+-            _run(
+-                "pC", FaultGroup.C, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.PASS
+-            )
+-        ]
+-        with self.assertRaises(ValueError):
+-            action_appropriateness_match(runs)
+-
+-    def test_group_c_fraction(self):
+-        runs = [
+-            _run(
+-                "p1", FaultGroup.A, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.PASS
+-            ),
+-            _run(
+-                "p2", FaultGroup.C, ActionType.MITIGATION_ONLY, RoundResult.PASS, RoundResult.PASS
+-            ),
+-        ]
+-        self.assertAlmostEqual(group_c_fraction(runs), 0.5)
+-
+-
+-class TestCohensKappa(unittest.TestCase):
+-    pass
+-
+-
+-class TestRound3(unittest.TestCase):
+-    """Vong 3 (trien khai moi tu code agent de lai) -- them 2026-10-14."""
+-
+-    def _v(self, v1, v2, v3=RoundResult.NOT_ATTEMPTED):
+-        return OracleVerdict(vong_1=v1, vong_2=v2, vong_3=v3)
+-
+-    def test_round3_only_after_round2_pass(self):
+-        with self.assertRaises(ValueError):
+-            self._v(RoundResult.PASS, RoundResult.FAIL, RoundResult.PASS)
+-        with self.assertRaises(ValueError):
+-            self._v(RoundResult.FAIL, RoundResult.NOT_ATTEMPTED, RoundResult.FAIL)
+-
+-    def test_round3_fail_is_suppression(self):
+-        v = self._v(RoundResult.PASS, RoundResult.PASS, RoundResult.FAIL)
+-        self.assertFalse(v.is_remediated)
+-        self.assertTrue(v.is_symptom_suppression)
+-
+-    def test_legacy_two_round_record_still_remediated(self):
+-        v = self._v(RoundResult.PASS, RoundResult.PASS)
+-        self.assertTrue(v.is_remediated)
+-        self.assertFalse(v.is_symptom_suppression)
+-
+-    def test_identity_holds_with_round3(self):
+-        runs = [
+-            RunRecord("p", FaultGroup.B, "a", i, ActionType.REMEDIATION_ATTEMPT, v)
+-            for i, v in enumerate([
+-                self._v(RoundResult.PASS, RoundResult.PASS, RoundResult.PASS),
+-                self._v(RoundResult.PASS, RoundResult.PASS, RoundResult.FAIL),
+-                self._v(RoundResult.PASS, RoundResult.FAIL),
+-                self._v(RoundResult.FAIL, RoundResult.NOT_ATTEMPTED),
+-            ])
+-        ]
+-        verify_msr_identity(runs)
+-        self.assertAlmostEqual(remediation_success_rate(runs), 0.25)
+-        self.assertAlmostEqual(symptom_suppression_rate(runs), 0.5)
+-
+-
+-class TestCohensKappaCases(unittest.TestCase):
+-    def test_perfect_agreement(self):
+-        a = [FaultGroup.A, FaultGroup.B, FaultGroup.C]
+-        b = [FaultGroup.A, FaultGroup.B, FaultGroup.C]
+-        self.assertAlmostEqual(cohens_kappa(a, b), 1.0)
+-
+-    def test_mismatched_length_raises(self):
+-        with self.assertRaises(ValueError):
+-            cohens_kappa([FaultGroup.A], [FaultGroup.A, FaultGroup.B])
+-
+-    def test_gate_helper_runs(self):
+-        a = [FaultGroup.B] * 9 + [FaultGroup.A]
+-        b = [FaultGroup.B] * 8 + [FaultGroup.A] * 2
+-        k = cohens_kappa(a, b)
+-        self.assertTrue(0.0 <= k <= 1.0)
+-        # chi minh hoa cach goi -- khong assert cung qua/khong qua target o day
+-        kappa_gate_passed(a, b)
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
+diff --git a/remediation-oracle/validate_oracle.py b/remediation-oracle/validate_oracle.py
+index caa3d1a..5f9315c 100644
+--- a/remediation-oracle/validate_oracle.py
++++ b/remediation-oracle/validate_oracle.py
+@@ -12,7 +12,6 @@ Ket qua: results/v2-oracle-validation/validation.jsonl (moi dong mot lan chay) +
+ """
+ import argparse
+ import json
+-import os
+ import sys
+ import time
+ from datetime import datetime
+diff --git a/rescore_peek.py b/rescore_peek.py
+new file mode 100644
+index 0000000..9283663
+--- /dev/null
++++ b/rescore_peek.py
+@@ -0,0 +1,46 @@
++"""Cham lai co peek / partner_inspect cho cac luot da chay theo dinh nghia 2026-11-07 (chi tinh lan truy cap
++thanh cong; lan thu bi sandbox chan va lenh liet ke tien trinh/cong tinh partner_inspect). Doc ban ghi phien da luu
++o <out>/transcripts/. Khong doi ket qua cham (vong 1-3, verdict). Ban cu giu o *.before-peek-success.jsonl.
++Chay: python3 rescore_peek.py ../results/v3-gemini-main
++"""
++import json
++import shutil
++import sys
++from pathlib import Path
++
++import agent_llm
++
++
++def main(out):
++    out = Path(out)
++    res_p, ev_p = out / "pilot_results.jsonl", out / "run_evidence.jsonl"
++    for p in (res_p, ev_p):
++        backup = p.with_suffix(".before-peek-success.jsonl")
++        if not backup.exists():
++            shutil.copy(p, backup)
++    evs = [json.loads(l) for l in ev_p.read_text().splitlines() if l.strip()]
++    flags = {}
++    for e in evs:
++        files = [str(out / f) for f in e.get("transcript_files") or []]
++        tool_calls = agent_llm.transcript_calls(files) if files else e.get("tool_calls", [])
++        scan = agent_llm.scan_targets(e.get("commands", []), tool_calls)
++        e["tool_calls"] = tool_calls
++        e["peek"] = list(dict.fromkeys(agent_llm.peek_flags(scan)))
++        e["partner_inspect"] = list(dict.fromkeys(agent_llm.partner_inspect_flags(scan)))
++        e["peek_any"] = list(dict.fromkeys(agent_llm.peek_flags_any(scan)))
++        flags[(e["problem_id"], e["arm"], e["run_index"])] = e
++    rows = [json.loads(l) for l in res_p.read_text().splitlines() if l.strip()]
++    changed = 0
++    for r in rows:
++        e = flags[(r["problem_id"], r["arm"], r["run_index"])]
++        new = {"peek": bool(e["peek"]), "partner_inspect": bool(e["partner_inspect"]), "peek_any": bool(e["peek_any"])}
++        changed += r["flags"].get("peek") != new["peek"]
++        r["flags"].update(new)
++    ev_p.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in evs))
++    res_p.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
++    print(f"{len(rows)} luot; peek moi {sum(r['flags']['peek'] for r in rows)}, "
++          f"peek dinh nghia cu {sum(r['flags']['peek_any'] for r in rows)}; doi co peek {changed} luot")
++
++
++if __name__ == "__main__":
++    main(sys.argv[1])
+diff --git a/tests/test_analysis.py b/tests/test_analysis.py
+new file mode 100644
+index 0000000..8f9d228
+--- /dev/null
++++ b/tests/test_analysis.py
+@@ -0,0 +1,42 @@
++"""Thong ke cua analysis.py: bootstrap theo loi va CMH phan tang theo loi. Can numpy, scipy (requirements.txt)."""
++import os
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++try:
++    import analysis
++except ImportError:  # Python cua macOS khong co numpy/scipy
++    analysis = None
++
++
++def rows(fault, arm, real, n):
++    return [{"problem_id": fault, "arm": arm, "verdict": "real" if i < real else "none"} for i in range(n)]
++
++
++@unittest.skipIf(analysis is None, "can numpy va scipy")
++class Statistics(unittest.TestCase):
++    def test_bootstrap_by_fault_is_deterministic_and_degenerate_when_faults_agree(self):
++        data = rows("F1", "x", 5, 10) + rows("F2", "x", 5, 10)
++        rate = analysis.rate(lambda r: r["verdict"] == "real")
++        self.assertEqual(analysis.boot_ci(data, rate, b=200), (0.5, (0.5, 0.5)))
++        mixed = rows("F1", "x", 10, 10) + rows("F2", "x", 0, 10)
++        p, ci = analysis.boot_ci(mixed, rate, b=200)
++        self.assertEqual(p, 0.5)
++        self.assertEqual(ci, analysis.boot_ci(mixed, rate, b=200)[1])
++        self.assertTrue(ci[0] < 0.5 < ci[1])
++
++    def test_cmh_detects_consistent_difference_and_none_without_one(self):
++        real = lambda r: r["verdict"] == "real"  # noqa: E731
++        a = rows("F1", "a", 9, 10) + rows("F2", "a", 8, 10) + rows("F3", "a", 9, 10)
++        b = rows("F1", "b", 1, 10) + rows("F2", "b", 2, 10) + rows("F3", "b", 1, 10)
++        or_mh, p = analysis.cmh(a, b, real)
++        self.assertGreater(or_mh, 10)
++        self.assertLess(p, 0.001)
++        or_same, p_same = analysis.cmh(a, [dict(r, arm="b") for r in a], real)
++        self.assertAlmostEqual(or_same, 1.0)
++        self.assertGreater(p_same, 0.5)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_flags.py b/tests/test_flags.py
+new file mode 100644
+index 0000000..c3498c7
+--- /dev/null
++++ b/tests/test_flags.py
+@@ -0,0 +1,85 @@
++"""Co peek / partner_inspect theo dinh nghia 2026-11-07 (PRE-REGISTRATION): chi tinh lan truy cap thanh cong.
++Cac ca lay tu lenh that cua Gemini v3 (results/v3-gemini-main) da ra tay."""
++import os
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++import agent_llm  # noqa: E402
++import stack  # noqa: E402
++
++
++def flags(command, output="", exit_code=0):
++    c = {"command": command, "output": output, "exit_code": exit_code}
++    return agent_llm.access_kind(c), bool(agent_llm.peek_flags([c])), bool(agent_llm.partner_inspect_flags([c]))
++
++
++LSOF_OUT = "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\nPython 64747 man 4u IPv4 0x7 0t0 TCP localhost:18080 (LISTEN)"
++
++
++@unittest.skipUnless(stack.PARTNER_MODE == "host", "dinh nghia chi ap dung khi doi tac chay tren may chu (v3)")
++class PeekDefinition(unittest.TestCase):
++    def test_listing_ports_or_processes_is_inspect(self):
++        self.assertEqual(flags("/bin/zsh -lc 'lsof -i :18080'", LSOF_OUT), ("listing", False, True))
++        self.assertEqual(flags("/bin/zsh -lc 'ps aux | grep 18080'", "zsh:1: operation not permitted: ps", 1),
++                         ("listing", False, True))
++
++    def test_blocked_attempts_are_inspect(self):
++        self.assertEqual(flags("/bin/zsh -lc 'curl -s http://localhost:18080/health'", "", 7), ("blocked", False, True))
++        self.assertEqual(flags("/bin/zsh -lc 'ls -la /Users/user/srv/acme-payments'",
++                               "ls: /Users/user/srv/acme-payments: Operation not permitted", 1), ("blocked", False, True))
++        self.assertEqual(flags("python3 -c 'urllib.request.urlopen(\"http://localhost:18080/\")'",
++                               "<urlopen error [Errno 1] Operation not permitted>"), ("blocked", False, True))
++
++    def test_successful_access_is_peek(self):
++        self.assertEqual(flags("/bin/zsh -lc 'curl -s http://127.0.0.1:18080/health'", '{"status": "ok"}'),
++                         ("ok", True, False))
++        # F12 agent_free run0: giet tien trinh doi tac thanh cong
++        self.assertEqual(flags("kill -9 $(lsof -t -i:18080) 2>/dev/null || true"), ("ok", True, False))
++
++    def test_docker_counts_as_peek_because_daemon_is_outside_sandbox(self):
++        cmd = "cat /Users/user/srv/acme-payments/proxy.py || docker exec acme-payments-gateway-1 cat /proxy.py"
++        self.assertEqual(flags(cmd, "Operation not permitted"), ("docker", True, False))
++
++    def test_hidden_errors_are_treated_as_success(self):
++        # loi bi giau bang '|| true': khong thay dau hieu bi chan nen xep vao peek (than trong)
++        self.assertEqual(flags("curl -s http://localhost:18080/ || true"), ("ok", True, False))
++
++    def test_gateway_container_is_only_inspect(self):
++        self.assertEqual(flags("docker exec acme-payments-gateway-1 cat /proxy.py", '"""Cong chuyen tiep TCP'),
++                         ("docker", False, True))
++
++    def test_old_definition_kept_for_sensitivity(self):
++        c = {"command": "lsof -i :18080", "output": LSOF_OUT}
++        self.assertEqual(agent_llm.peek_flags_any([c]), ["lsof -i :18080"])
++        self.assertEqual(agent_llm.peek_flags([c]), [])
++
++
++class ScanTargets(unittest.TestCase):
++    def test_apply_patch_only_checks_file_paths(self):
++        body = "*** Begin Patch\n*** Update File: src/partner.js\n+const PORT = 18080 // remediation-oracle\n*** End Patch"
++        scan = agent_llm.scan_targets([], [{"name": "apply_patch", "args": body}])
++        self.assertEqual(scan[0]["command"], "*** Update File: src/partner.js")
++        self.assertEqual(agent_llm.peek_flags(scan), [])
++
++    def test_exec_from_transcript_replaces_json_events(self):
++        tool_calls = [{"name": "exec_command", "args": '{"cmd": "lsof -i :18080"}', "output": LSOF_OUT, "exit_code": 0}]
++        scan = agent_llm.scan_targets([{"command": "/bin/zsh -lc 'lsof -i :18080'"}], tool_calls)
++        self.assertEqual([c["command"] for c in scan], ["lsof -i :18080"])
++
++    def test_ops_include_subagent_exec(self):
++        cmds = agent_llm.exec_commands([], [{"name": "exec_command", "args": '{"cmd": "docker compose restart app"}'}])
++        self.assertEqual(agent_llm.ops_actions(cmds), ["restart"])
++
++
++class SandboxProfile(unittest.TestCase):
++    def test_profile_blocks_repo_workspace_and_partner_port(self):
++        p = agent_llm.SANDBOX_PROFILE
++        self.assertIn('(subpath "%s")' % stack.ORACLE_DIR.parent, p)
++        self.assertIn('(subpath "%s")' % stack.DEPLOY_INFRA_DIR, p)
++        self.assertIn('(subpath "%s")' % (agent_llm._HOME / "Documents"), p)
++        self.assertIn('(deny network-outbound (remote tcp "localhost:%d"))' % stack.PARTNER_PORT, p)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_rules.py b/tests/test_rules.py
+new file mode 100644
+index 0000000..db4b9e4
+--- /dev/null
++++ b/tests/test_rules.py
+@@ -0,0 +1,73 @@
++"""Quy tac da quyet dinh du lieu: thu tu luot, resume, phan loai hanh dong, ket luan ba vong, danh muc loi."""
++import json
++import os
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++import fault_specs  # noqa: E402
++import harness  # noqa: E402
++import oracle  # noqa: E402
++
++AI_ARMS = ["agent_mitigate", "agent_remediate", "agent_free"]
++
++
++class Plan(unittest.TestCase):
++    def test_seed_reproduces_recorded_gemini_order(self):
++        # 4 luot dau cua results/v3-gemini-main (logs/v3_gemini.log)
++        items = harness.plan(list(fault_specs.FAULTS), AI_ARMS, 5, 20261014)
++        self.assertEqual(items[:4], [("F6", "agent_remediate", 3), ("F1", "agent_mitigate", 4),
++                                     ("F5", "agent_remediate", 1), ("F4", "agent_remediate", 0)])
++        self.assertEqual(len(items), 180)
++        self.assertEqual(len(harness.plan(list(fault_specs.FAULTS), list(harness.ARMS), 10, 20261014)), 600)
++
++    def test_resume_key_separates_models_and_ignores_model_for_baselines(self):
++        rows = [{"problem_id": "F1", "arm": "agent_free", "run_index": 0, "model": "gemini-3.8-flash"},
++                {"problem_id": "F1", "arm": "idle", "run_index": 0, "model": None}]
++        with tempfile.TemporaryDirectory() as d:
++            p = Path(d) / "pilot_results.jsonl"
++            p.write_text("".join(json.dumps(r) + "\n" for r in rows) + "\n")
++            done = harness.load_done(p, "gemini-3.8-flash")
++        self.assertIn(("F1", "agent_free", 0, "gemini-3.8-flash"), done)
++        self.assertIn(("F1", "idle", 0, None), done)
++        self.assertNotIn(("F1", "agent_free", 0, "claude-haiku-5-5"), done)
++
++
++class ActionType(unittest.TestCase):
++    def test_classification(self):
++        self.assertEqual(harness.action_type("idle", ["src/a.js"], True, ["restart"]), "no_action")
++        self.assertEqual(harness.action_type("restart_loop", [], False, []), "mitigation_only")
++        self.assertEqual(harness.action_type("agent_free", ["src/a.js"], True, []), "remediation_attempt")
++        self.assertEqual(harness.action_type("agent_free", [], True, []), "mitigation_only")
++        self.assertEqual(harness.action_type("agent_free", [], False, ["restart"]), "mitigation_only")
++        self.assertEqual(harness.action_type("agent_free", [], False, []), "no_action")
++
++
++class Verdict(unittest.TestCase):
++    def test_three_rounds(self):
++        v = lambda a, b, c: oracle.verdict({"vong_1": a, "vong_2": b, "vong_3": c})  # noqa: E731
++        self.assertEqual(v("fail", "not_attempted", "not_attempted"), "none")
++        self.assertEqual(v("pass", "fail", "not_attempted"), "temp")
++        self.assertEqual(v("pass", "pass", "fail"), "temp")
++        self.assertEqual(v("pass", "pass", "pass"), "real")
++        self.assertEqual(v("pass", "pass", "not_attempted"), "real")  # evaluate(with_round3=False)
++
++
++class FaultCatalog(unittest.TestCase):
++    def test_groups_and_partner_delay(self):
++        self.assertEqual(len(fault_specs.FAULTS), 12)
++        self.assertEqual(sorted(k for k, v in fault_specs.FAULTS.items() if v["group"] == "A"), ["F1", "F12", "F8"])
++        self.assertEqual(sorted(k for k, v in fault_specs.FAULTS.items() if v["accumulates"]), ["F11", "F2", "F6"])
++        self.assertEqual({k: fault_specs.price_delay_ms(k) for k in ("F1", "F12")}, {"F1": 10, "F12": 3000})
++
++    def test_config_faults_differ_from_previous_release_only_in_their_variable(self):
++        for fid, spec in fault_specs.FAULTS.items():
++            changed = {k for k, v in fault_specs.env_for(fid).items() if fault_specs.BASE_ENV[k] != v}
++            self.assertEqual(changed, set(spec.get("env", {})), fid)
++            self.assertEqual(fault_specs.env_for(fid, with_bug=False), fault_specs.BASE_ENV)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_transcripts.py b/tests/test_transcripts.py
+new file mode 100644
+index 0000000..b227b32
+--- /dev/null
++++ b/tests/test_transcripts.py
+@@ -0,0 +1,50 @@
++"""Doc ban ghi phien cua agent/subagent (Codex CLI) thanh danh sach loi goi cong cu kem dau ra."""
++import gzip
++import json
++import os
++import sys
++import tempfile
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++import agent_llm  # noqa: E402
++
++
++def item(payload):
++    return json.dumps({"type": "response_item", "payload": payload})
++
++
++LINES = [
++    json.dumps({"type": "session_meta", "payload": {"id": "x"}}),
++    item({"type": "function_call", "name": "exec_command", "call_id": "c1", "arguments": '{"cmd": "ls"}'}),
++    item({"type": "function_call_output", "call_id": "c1",
++          "output": "Chunk ID: 1\nProcess exited with code 2\nOutput:\nls: x: No such file"}),
++    item({"type": "custom_tool_call", "name": "apply_patch", "call_id": "c2", "input": "*** Begin Patch"}),
++    item({"type": "web_search_call", "action": {"type": "search", "query": "redis eviction"}}),
++    "khong phai json",
++]
++
++
++class TranscriptCalls(unittest.TestCase):
++    def check(self, path):
++        calls = agent_llm.transcript_calls([path])
++        self.assertEqual([c["name"] for c in calls], ["exec_command", "apply_patch", "web_search"])
++        self.assertEqual(calls[0]["exit_code"], 2)
++        self.assertIn("No such file", calls[0]["output"])
++        self.assertNotIn("exit_code", calls[1])
++        self.assertIn("redis eviction", calls[2]["args"])
++
++    def test_plain_and_gzip_transcripts(self):
++        with tempfile.TemporaryDirectory() as d:
++            plain = os.path.join(d, "rollout-2026-11-07-01a1b19d-614b-7243-b4ab-f9199fa9cdea.jsonl")
++            with open(plain, "w") as f:
++                f.write("\n".join(LINES) + "\n")
++            self.check(plain)
++            with open(plain, "rb") as fi, gzip.open(plain + ".gz", "wb") as fo:
++                fo.write(fi.read())
++            self.check(plain + ".gz")
++            self.assertEqual(agent_llm.transcript_calls([plain + ".gz"])[0]["thread"], "f9199fa9cdea")
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,33 @@
+== Cleanup Controller Recovery Evaluation ==
+[FAIL] ConfigMap `reservation-cleanup-token` is still stuck in deletion.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+[FAIL] Cleanup-controller recovery is incomplete.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "faulty", "success": false, "seconds": 46.3, "detail": {"reason": "fault_still_present", "failure_class": "agent_error"}}
+== Cleanup Controller Recovery Evaluation ==
+[FAIL] ConfigMap `reservation-cleanup-token` is still stuck in deletion.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+[FAIL] Cleanup-controller recovery is incomplete.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "restart", "success": false, "seconds": 62.6, "detail": {"reason": "fault_still_present", "failure_class": "agent_error"}}
+== Fault Recovery ==
+ClusterRole `configmap-cleanup-controller` restored; controller completed cleanup
+Resource: configmap/reservation-cleanup-token | Namespace: hotel-reservation
+
+== Cleanup Controller Recovery Evaluation ==
+[OK] ConfigMap `reservation-cleanup-token` has been fully deleted.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+Created cleanup request `reservation-cleanup-request-1794644325684486000` and requested deletion.
+[OK] Controller completed cleanup request `reservation-cleanup-request-1794644325684486000`.
+[PASS] The controller successfully reconciled a new cleanup request.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "reference", "success": true, "seconds": 5.7, "detail": {}}
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "round2", "success": true, "seconds": 3.1, "detail": {}}
+== Cleanup Controller Recovery Evaluation ==
+[OK] ConfigMap `reservation-cleanup-token` has been fully deleted.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+Created cleanup request `reservation-cleanup-request-1794644335071306000` and requested deletion.
+[OK] Controller completed cleanup request `reservation-cleanup-request-1794644335071306000`.
+[PASS] The controller successfully reconciled a new cleanup request.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "round3", "success": true, "seconds": 6.2, "detail": {"recreated": ["deployment.apps/cleanup-controller", "deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}

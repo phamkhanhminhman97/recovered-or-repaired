@@ -1,0 +1,18 @@
+2026-11-14 14:19:21,889 - all.application - INFO - Namespace astronomy-shop already exists.
+== Mitigation Evaluation ==
+🔍 Found Valkey pod: valkey-cart-859985f49d-2ctz7
+❌ Valkey still requires authentication
+{"problem": "valkey_auth_disruption", "step": "faulty", "success": false, "seconds": 0.2, "detail": {"reason": "valkey_still_requires_auth", "failure_class": "agent_error", "detail": {"pod": "valkey-cart-859985f49d-2ctz7"}}}
+[🔓] Found Valkey pod: valkey-cart-859985f49d-2ctz7
+[✅] Recovery result: OK
+
+[FAULT INJECTED] valkey auth disruption
+== Mitigation Evaluation ==
+🔍 Found Valkey pod: valkey-cart-859985f49d-2ctz7
+❌ Cart deployment has not recovered: 0/1 replicas available.
+{"problem": "valkey_auth_disruption", "step": "reference", "success": false, "seconds": 4.0, "detail": {"reason": "deployment_replicas_unready", "failure_class": "ambiguous", "detail": {"deployment": "cart", "ready": 0, "desired": 1}}}
+== Mitigation Evaluation ==
+🔍 Found Valkey pod: valkey-cart-859985f49d-2ctz7
+✅ Valkey password is cleared and cart is available. Authentication restored.
+Mitigation Result: Pass ✅
+{"problem": "valkey_auth_disruption", "step": "round3", "success": true, "seconds": 12.7, "detail": {"recreated": ["deployment.apps/accounting", "deployment.apps/ad", "deployment.apps/cart", "deployment.apps/checkout", "deployment.apps/currency", "deployment.apps/email", "deployment.apps/flagd", "deployment.apps/fraud-detection", "deployment.apps/frontend", "deployment.apps/frontend-proxy", "deployment.apps/image-provider", "deployment.apps/llm", "deployment.apps/load-generator", "deployment.apps/payment", "deployment.apps/product-catalog", "deployment.apps/product-reviews", "deployment.apps/quote", "deployment.apps/recommendation", "deployment.apps/shipping"]}}

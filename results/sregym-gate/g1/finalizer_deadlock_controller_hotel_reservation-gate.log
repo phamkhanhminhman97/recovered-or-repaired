@@ -1,0 +1,26 @@
+== Cleanup Controller Recovery Evaluation ==
+[FAIL] ConfigMap `reservation-cleanup-token` is still stuck in deletion.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+[FAIL] Cleanup-controller recovery is incomplete.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "faulty", "success": false, "seconds": 46.3, "detail": {"reason": "fault_still_present", "failure_class": "agent_error"}}
+== Fault Recovery ==
+ClusterRole `configmap-cleanup-controller` restored; controller completed cleanup
+Resource: configmap/reservation-cleanup-token | Namespace: hotel-reservation
+
+== Cleanup Controller Recovery Evaluation ==
+[OK] ConfigMap `reservation-cleanup-token` has been fully deleted.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+Created cleanup request `reservation-cleanup-request-1794636070277777000` and requested deletion.
+[OK] Controller completed cleanup request `reservation-cleanup-request-1794636070277777000`.
+[PASS] The controller successfully reconciled a new cleanup request.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "reference", "success": true, "seconds": 4.2, "detail": {}}
+== Cleanup Controller Recovery Evaluation ==
+[OK] ConfigMap `reservation-cleanup-token` has been fully deleted.
+[OK] Controller Deployment is healthy (1/1 ready).
+[OK] Application pods are healthy.
+Created cleanup request `reservation-cleanup-request-1794636088476220000` and requested deletion.
+[OK] Controller completed cleanup request `reservation-cleanup-request-1794636088476220000`.
+[PASS] The controller successfully reconciled a new cleanup request.
+{"problem": "finalizer_deadlock_controller_hotel_reservation", "step": "round3", "success": true, "seconds": 18.2, "detail": {"recreated": ["deployment.apps/cleanup-controller", "deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}

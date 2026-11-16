@@ -1,0 +1,14 @@
+2026-11-15 04:53:38,096 - all.application - INFO - Namespace astronomy-shop already exists.
+Traceback (most recent call last):
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 306, in <module>
+    main()
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 294, in main
+    last_ok = run_step(problem, pid, step)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 263, in run_step
+    restart_twice(problem, pid)
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 71, in restart_twice
+    sh(f"kubectl rollout restart deployment/{d} -n {problem.namespace}")
+  File "/Users/user/Documents/workspace/research/thesis-selfheal-agent/sregym-oracle/gate.py", line 48, in sh
+    raise RuntimeError(f"{cmd}: {r.stderr.strip()[-500:]}")
+RuntimeError: kubectl rollout restart deployment/orders-validator -n astronomy-shop: error: failed to create patch for orders-validator: if restart has already been triggered within the past second, please wait before attempting to trigger another

@@ -1,0 +1,13 @@
+\begin{tabular}{lllrr}
+\toprule
+Model & Contrast & Difference in RSR [95\% CI] & OR$_{\mathrm{MH}}$ & $p$ \\
+\midrule
+Haiku~5.5 & AI-mitigate $-$ AI-remediate & -0.59 [-0.85, -0.32] & 0.08 & $<$0.001 \\
+ & AI-mitigate $-$ AI-free & -0.51 [-0.78, -0.24] & 0.07 & $<$0.001 \\
+ & AI-remediate $-$ AI-free & +0.08 [-0.05, +0.23] & 2.59 & 0.039 \\
+\midrule
+Gemini Flash & AI-mitigate $-$ AI-remediate & -0.12 [-0.51, +0.26] & 0.68 & 0.268 \\
+ & AI-mitigate $-$ AI-free & -0.22 [-0.54, +0.08] & 0.28 & 0.001 \\
+ & AI-remediate $-$ AI-free & -0.10 [-0.24, +0.04] & 0.25 & 0.077 \\
+\bottomrule
+\end{tabular}

@@ -1,0 +1,1 @@
+{"problem": "kafka_poison_pill_hol_block", "arm": "ai", "rep": 0, "run_id": "pilot-kafka_poison_pill_hol_block", "started": "2026-11-14T23:41:57", "gate_sha": "05f0de7e90a4", "model": "claude-haiku-5-5", "rc": 0, "round1": null, "sregym_results": null, "sregym_run_dir": null, "codex_logs": 0, "infra_error": "no_sregym_result", "seconds": 795}

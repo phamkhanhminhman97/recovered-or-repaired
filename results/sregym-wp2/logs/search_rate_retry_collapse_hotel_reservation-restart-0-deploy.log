@@ -1,0 +1,205 @@
+[11/15/26 05:31:17] INFO     all.sregym.profile - Deployment profile: svelte    
+[11/15/26 05:31:17] INFO     __main__ - 🔧 Config — agent: stratus, agent_model:
+                             gpt-5, judge_backend: api, judge_model: gpt-5,     
+                             reasoning_effort: agent default, jev_model:        
+                             disabled, deployment_profile: svelte,              
+                             internet_access: filtered, container_hardening: on,
+                             agent_api_base: unset, judge_api_base: unset       
+╭───────────────────────────── SREGym API Server ──────────────────────────────╮
+│  ____  ____  _____ ____                                                      │
+│ / ___||  _ \| ____/ ___|_   _ _ __ ___                                       │
+│ \___ \| |_) |  _|| |  _| | | | '_ ` _ \                                      │
+│  ___) |  _ <| |__| |_| | |_| | | | | | |                                     │
+│ |____/|_| \_\_____\____|\__, |_| |_| |_|                                     │
+│                         |___/                                                │
+│                                                                              │
+╰──────────────────────────── http://0.0.0.0:8000 ─────────────────────────────╯
+Available Endpoints                                                             
+
+ • POST /submit: { "stage": "diagnosis", "solution": "<your-solution>" } →      
+   grades the named stage                                                       
+ • GET /status: returns { "stage": "setup" | "diagnosis" | "mitigation" |       
+   "tearing_down" | "done" }                                                    
+/Users/user/srv/SREGym/.venv/lib/python3.12/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+  warnings.warn(  # deprecated in 14.0 - 2024-11-09
+/Users/user/srv/SREGym/.venv/lib/python3.12/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+  from websockets.server import WebSocketServerProtocol
+                    INFO     uvicorn.error - Started server process [17522]     
+                    INFO     uvicorn.error - Waiting for application startup.   
+                    INFO     uvicorn.error - Application startup complete.      
+                    INFO     uvicorn.error - Uvicorn running on                 
+                             http://0.0.0.0:8000 (Press CTRL+C to quit)         
+[05:31:18] 🎯 Running single problem:                                main.py:417
+           search_rate_retry_collapse_hotel_reservation                         
+                                                                     main.py:498
+           🔍 Starting problem:                                                 
+           search_rate_retry_collapse_hotel_reservation (Attempt 1              
+           of 1)                                                                
+[11/15/26 05:31:18] INFO     all.sregym.conductor - [Session Start] Problem ID: 
+                             search_rate_retry_collapse_hotel_reservation       
+                    INFO     all.sregym.conductor - [STAGE] Start testing on    
+                             problem:                                           
+                             search_rate_retry_collapse_hotel_reservation       
+                    INFO     all.sregym.conductor - No tasklist.yml found.      
+                             Defaulting to running diagnosis and mitigation for 
+                             this problem.                                      
+                    INFO     all.sregym.conductor - Fixing Kubernetes... to     
+                             normal state.                                      
+                    INFO     all.sregym.conductor - [FIX] Imbalance leftover if 
+                             any                                                
+                    INFO     all.sregym.conductor - [FIX] KubeletCrash leftover 
+                             if any                                             
+Starting kubelet in kind-worker...
+Kubelet started in kind-worker
+Starting kubelet in kind-worker2...
+Kubelet started in kind-worker2
+Starting kubelet in kind-worker3...
+Kubelet started in kind-worker3
+Waiting for nodes ['kind-worker', 'kind-worker2', 'kind-worker3'] to become Ready...
+All requested nodes are Ready.
+                    INFO     all.sregym.conductor - [FIX]                       
+                             KubeletEvictionThresholdMisconfig leftover if any  
+Recovering disk pressure in kind-worker...
+Waiting for nodes ['kind-worker'] to become Ready...
+All requested nodes are Ready.
+Recovering disk pressure in kind-worker2...
+Waiting for nodes ['kind-worker2'] to become Ready...
+All requested nodes are Ready.
+Recovering disk pressure in kind-worker3...
+Waiting for nodes ['kind-worker3'] to become Ready...
+All requested nodes are Ready.
+[11/15/26 05:31:19] INFO     all.sregym.conductor - [FIX] Calico                
+                             IPPool/strictAffinity leftover if any              
+                    INFO     all.sregym.conductor - [FIX] Calico route-reflector
+                             label drift leftovers if any                       
+[11/15/26 05:31:20] INFO     all.sregym.conductor - [FIX] Stale CoreDNS NXDOMAIN
+                             templates if any                                   
+No NXDOMAIN templates found in CoreDNS config; nothing to do
+                    INFO     all.sregym.conductor - [FIX] NightlyRebalanceOOM   
+                             kube-system actor leftover if any                  
+                    INFO     all.sregym.conductor - [FIX] Clock drift leftover  
+                             if any                                             
+No leftover node-probe pods found; nothing to do
+                    INFO     all.sregym.conductor - Fix Kubernetes completed.   
+                    INFO     all.sregym.conductor - Undeploying app leftovers...
+[05:31:20] Waiting for namespace deletion...                      kubectl.py:540
+[05:32:00] Namespace 'hotel-reservation' has been deleted.        kubectl.py:552
+[11/15/26 05:32:00] INFO     all.infra.kubectl - Namespace 'hotel-reservation'  
+                             deleted successfully.                              
+           Waiting for namespace deletion...                      kubectl.py:540
+           Namespace 'hotel-reservation' has been deleted.        kubectl.py:552
+[11/15/26 05:32:05] INFO     all.sregym.conductor - App leftovers undeployed.   
+                    INFO     all.sregym.conductor - Deploying app...            
+                    INFO     all.infra.cluster_state - Baseline state loaded    
+                             from                                               
+                             /Users/user/cache_dir/cluster_baseline_state.json   
+                    INFO     all.sregym.conductor - [DEPLOY] Loaded persisted   
+                             cluster baseline state                             
+                    INFO     all.sregym.conductor - [DEPLOY] Checking Kubernetes
+                             pod networking…                                    
+[11/15/26 05:32:08] INFO     all.sregym.conductor - [DEPLOY] Setting up         
+                             metrics-server…                                    
+                    INFO     all.sregym.conductor - [DEPLOY] metrics-server     
+                             already present and patched; skipping re-apply     
+[05:32:08] Waiting for all pods in namespace 'kube-system' to be  kubectl.py:378
+           ready...                                                             
+           All pods in namespace 'kube-system' are ready.         kubectl.py:421
+                    INFO     all.sregym.conductor - [DEPLOY] Setting up OpenEBS…
+                    INFO     all.sregym.conductor - [DEPLOY] OpenEBS already    
+                             deployed; skipping operator re-apply               
+                    INFO     all.sregym.conductor - [svelte] Removing OpenEBS   
+                             node-disk-manager (openebs-hostpath does not use   
+                             it)                                                
+           Waiting for all pods in namespace 'openebs' to be      kubectl.py:378
+           ready...                                                             
+           All pods in namespace 'openebs' are ready.             kubectl.py:421
+                    INFO     all.sregym.conductor - [DEPLOY] Preloading OpenEBS 
+                             helper image openebs/linux-utils:3.5.0 on every    
+                             node…                                              
+[11/15/26 05:32:12] INFO     all.sregym.conductor - [DEPLOY] Deploying          
+                             Prometheus…                                        
+[11/15/26 05:32:13] INFO     all.infra.prometheus - Prometheus already uses the 
+                             requested profile. Skipping redeployment.          
+                    INFO     all.sregym.conductor - [DEPLOY] Deploying Jaeger…  
+                    INFO     all.sregym.jaeger - Jaeger deployed successfully.  
+                    INFO     all.sregym.conductor - [DEPLOY] Deploying OTel     
+                             Collector…                                         
+                    INFO     all.sregym.otel_collector - OTel Collector deployed
+                             successfully.                                      
+                    INFO     all.sregym.conductor - [DEPLOY] Skipping Loki      
+                             deployment (external harness mode)                 
+                    INFO     all.sregym.conductor - [DEPLOY] Deploying MCP      
+                             server…                                            
+[11/15/26 05:32:16] INFO     all.sregym.mcp_server - Port forwarding established
+                             at 9954. MCP_SERVER_PORT set.                      
+                    INFO     all.sregym.mcp_server - MCP server deployment and  
+                             access policy are ready.                           
+                    INFO     all.sregym.conductor - [ENV] Set up necessary      
+                             components: metrics-server, OpenEBS, Prometheus,   
+                             Jaeger, Loki                                       
+                    INFO     all.sregym.conductor - [DEPLOY] Deploying and      
+                             starting workload                                  
+                    INFO     all.application - Deploying Kubernetes             
+                             configurations in namespace: hotel-reservation     
+                    INFO     all.application - Namespace hotel-reservation not  
+                             found. Creating namespace.                         
+                    INFO     all.application - Namespace hotel-reservation      
+                             created successfully: namespace/hotel-reservation  
+                             created                                            
+                                                                                
+                    INFO     all.infra.kubectl - ConfigMap 'mongo-rate-script'  
+                             created in namespace 'hotel-reservation'           
+                    INFO     all.infra.kubectl - ConfigMap 'mongo-geo-script'   
+                             created in namespace 'hotel-reservation'           
+[05:32:16] Waiting for all pods in namespace 'hotel-reservation'  kubectl.py:378
+           to be ready...                                                       
+[05:32:29] All pods in namespace 'hotel-reservation' are ready.   kubectl.py:421
+[11/15/26 05:32:29] INFO     all.sregym.conductor - [ENV] Deploy application:   
+                             Hotel Reservation                                  
+                    INFO     all.sregym.jaeger - Created ExternalName service   
+                             'jaeger' in namespace 'hotel-reservation' ->       
+                             otel-collector.observe.svc.cluster.local           
+                    INFO     all.sregym.jaeger - Created ExternalName service   
+                             'jaeger-agent' in namespace 'hotel-reservation' -> 
+                             otel-collector.observe.svc.cluster.local           
+                    INFO     all.sregym.jaeger - Created ExternalName service   
+                             'jaeger-collector' in namespace 'hotel-reservation'
+                             -> otel-collector.observe.svc.cluster.local        
+                    INFO     all.sregym.jaeger - Created ExternalName service   
+                             'jaeger-query' in namespace 'hotel-reservation' -> 
+                             otel-collector.observe.svc.cluster.local           
+                    INFO     all.sregym.conductor - [ENV] Default application   
+                             workload disabled for this problem                 
+                    INFO     all.sregym.conductor - App deployed.               
+== Fault Injection ==
+[Baseline] Warming the application at 8 requests/s...
+[Baseline] rate=8.00/s success=100.0% attempts/request=1.00 queue=0
+[Trigger] Raising external search traffic to 40 requests/s...
+[Trigger] Ended after 10s; external traffic returned to baseline
+[Post-trigger] rate=8.00/s success=0.0% attempts/request=3.00 queue=255->255
+[11/15/26 05:34:05] INFO     all.sregym.conductor - [ENV] Injected fault        
+                    INFO     all.sregym.conductor - [STAGE] Go to stage         
+                             diagnosis                                          
+                    INFO     all.sregym.conductor - ✅ Deployment complete.     
+                             Ready for submission. Current stage is: diagnosis  
+[05:34:05] ✅ Fault injected for problem                             main.py:625
+           'search_rate_retry_collapse_hotel_reservation'. Exiting              
+           for external harness.                                                
+Benchmarking stratus — search_rate_retry_collapse_hotel_reservation (attempt 1… 
+
+                    WARNING  all.sregym.conductor_api - Shutting down API       
+                             server...                                          
+[11/15/26 05:34:05] INFO     uvicorn.error - Shutting down                      
+                    INFO     uvicorn.error - Finished server process [17522]    
+                    WARNING  __main__ - ⚠️ No results to write.                  
+Exception in thread hotel-search-scheduler:
+Traceback (most recent call last):
+  File "/Users/user/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Users/user/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/user/srv/SREGym/sregym/generators/workload/hotel_search.py", line 212, in _schedule
+    executor.submit(self._request)
+  File "/Users/user/.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 171, in submit
+    raise RuntimeError('cannot schedule new futures after shutdown')
+RuntimeError: cannot schedule new futures after shutdown

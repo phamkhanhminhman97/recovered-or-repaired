@@ -1,0 +1,12 @@
+== NetworkPolicy Mitigation Evaluation ==
+
+[FAIL] Hotel Reservation recommendation request did not recover
+{"problem": "network_policy_block", "step": "faulty", "success": false, "seconds": 8.1, "detail": {"reason": "fault_still_present", "failure_class": "agent_error", "detail": {"service": "recommendation"}}}
+== NetworkPolicy Mitigation Evaluation ==
+RECOMMENDATION_OK
+[PASS] Recommendation is healthy, discoverable, and reachable through the frontend
+{"problem": "network_policy_block", "step": "reference", "success": true, "seconds": 4.1, "detail": {}}
+== NetworkPolicy Mitigation Evaluation ==
+RECOMMENDATION_OK
+[PASS] Recommendation is healthy, discoverable, and reachable through the frontend
+{"problem": "network_policy_block", "step": "round3", "success": true, "seconds": 8.2, "detail": {"recreated": ["deployment.apps/frontend", "deployment.apps/geo", "deployment.apps/profile", "deployment.apps/rate", "deployment.apps/recommendation", "deployment.apps/reservation", "deployment.apps/search", "deployment.apps/user"]}}

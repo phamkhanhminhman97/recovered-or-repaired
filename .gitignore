@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS and editor files
+.DS_Store
+node_modules/
+
+# Secrets and copyrighted documents
+target-app/.env
+*.pdf
+
+# Paper figures (generated from results/, small) stay tracked; LaTeX build outputs do not
+!results/figures/*.pdf
+paper/*.log
+paper/*.blg
+paper/*.aux
+paper/*.bbl
+paper/*-build.txt
+paper/arxiv/
+paper/arxiv.tar.gz
+paper/springer/
+paper/springer.zip
+paper/arxiv-metadata.txt

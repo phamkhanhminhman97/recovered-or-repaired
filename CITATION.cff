@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this code or data, please cite the paper in preferred-citation."
+title: "Recovered or Repaired? Harness, three-round oracle, and run records"
+type: software
+repository-code: "https://github.com/user97/recovered-or-repaired"
+authors:
+  - family-names: Pham
+    given-names: Khanh Minh Man
+    affiliation: "The University of Danang - University of Science and Technology"
+    orcid: "https://orcid.org/0009-0000-5260-439X"
+license:
+  - MIT
+  - CC-BY-4.0
+keywords:
+  - incident remediation
+  - LLM agents
+  - site reliability engineering
+  - evaluation oracle
+preferred-citation:
+  type: article
+  title: "Recovered or Repaired? A Three-Round External Oracle for LLM Agents on Backend Incident Remediation"
+  authors:
+    - family-names: Pham
+      given-names: Khanh Minh Man
+      affiliation: "The University of Danang - University of Science and Technology"
+      orcid: "https://orcid.org/0009-0000-5260-439X"
+  year: 2026
