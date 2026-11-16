@@ -1,17 +1,14 @@
-Benchmarks for AI agents that handle incidents usually score an episode by whether the system is healthy again. This
-cannot tell a repaired system from one whose symptoms a restart or a configuration tweak merely suppressed. We build a
-three-round external oracle: round~1 checks the service the agent left, round~2 replays the incident-inducing load on
-that system, and round~3 replays it on a system rebuilt from the code and configuration the agent left. A fix that
-passes all three rounds is durable. We validate the oracle on 37 scenarios with reference fixes (111/111 runs as
-expected) and apply it to 12 injected faults in a Node.js order service under five arms (do nothing, restart, and a
-large-language-model agent that may only mitigate, must fix the code, or decides freely), with Claude Haiku~5.5
-(\numrunsHaiku{} runs) and Gemini~3.8~Flash (\numrunsGemini{} runs, nearly half cut off at 300~s). Scored by one check, \nummitTempShareHaiku\% and
-\nummitTempShareGemini\% of the mitigation-only agent's successes are temporary (23--49\% and 23--39\% with any one fault
-left out). Durable is not yet repaired: every durable fix of the mitigation-only agent on a code fault was a
-configuration workaround, such as a one-connection database pool that avoids a deadlock, and some code changes also
-left the defect in place. On eight SREGym problems, the extra rounds reject workarounds we wrote that SREGym's oracle
-accepts in three of four testable problems, yet none of the 36 fixes it accepted from Claude Haiku and Sonnet~5.5 was
-temporary. Under one isolation level, Sonnet and Haiku gave the same verdict on every fault both mitigated but cleared
-different faults. Keeping agents from reading the answer took four isolation iterations: agents located the grader with
-\texttt{lsof}, read partner code through \texttt{docker exec}, called hidden ports, and mounted the host's home
-directory into a container. The pre-registration log, harness, and run records are public.
+Incident benchmarks for AI agents usually count an episode as solved once the system looks healthy, which cannot
+separate a repair from a restart or configuration tweak that merely suppressed symptoms. Our three-round external oracle
+checks the service the agent left, replays the incident-inducing load on it, and replays it again on a system rebuilt
+from the agent's code and configuration; a fix passing all three rounds is durable. Validated on 37 scenarios (111/111
+runs as expected), it is applied to 12 injected faults in a Node.js order service under five arms (do nothing, restart,
+and a large-language-model agent that may only mitigate, must fix the code, or decides freely), with \numairunsHaiku{}
+agent runs of Claude Haiku~5.5 and \numairunsGemini{} of Gemini~3.8~Flash (nearly half cut off at 300~s). A liveness
+probe credits \numliveIdlePctHaiku\% of the runs where nothing was done; against each fault's own criterion,
+\nummitTempShareHaiku\% and \nummitTempShareGemini\% of the mitigation-only agent's successes are temporary (23--49\%
+and 23--39\% leaving out any one fault). Durable is not yet repaired: on code faults, every durable fix of the
+mitigation-only agent was a configuration workaround, such as a one-connection database pool that avoids a deadlock. On
+eight SREGym problems, the extra rounds reject hand-written workarounds that SREGym's oracle accepts in three of four
+testable problems, yet none of the 36 agent fixes it accepted (Claude Haiku and Sonnet~5.5) was temporary. Isolating the
+grader from the agents took four iterations. The pre-registration log, harness, and run records are public.

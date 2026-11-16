@@ -2,7 +2,7 @@
 \toprule
 Problem & Arm & $N$ & Not recovered & Temporary & Durable & Unscored \\
 \midrule
-\multicolumn{7}{l}{\emph{Group A: no durability step in SREGym's oracle}} \\
+\multicolumn{7}{l}{\emph{Unchecked problems: no durability step in SREGym's oracle}} \\
 Wrong pod selector & Idle & 3 & 3 & 0 & 0 & 0 \\
  & Restart & 3 & 3 & 0 & 0 & 0 \\
  & AI (Haiku~5.5) & 5 & 0 & 0 & 5 & 0 \\
@@ -20,7 +20,7 @@ Local traffic policy & Idle & 3 & 3 & 0 & 0 & 0 \\
  & AI (Haiku~5.5) & 5 & 0 & 0 & 5 & 0 \\
  & AI (Sonnet~5.5) & 5 & 2 & 0 & 3 & 0 \\
 \midrule
-\multicolumn{7}{l}{\emph{Group B: SREGym's oracle replays load or reruns work}} \\
+\multicolumn{7}{l}{\emph{Checked problems: SREGym's oracle replays load or reruns work}} \\
 CronJob sidecar & Idle & 3 & 3 & 0 & 0 & 0 \\
  & AI (Haiku~5.5) & 5 & 5 & 0 & 0 & 0 \\
  & AI (Sonnet~5.5) & 5 & 3 & 0 & 2 & 0 \\

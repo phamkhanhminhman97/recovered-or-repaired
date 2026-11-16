@@ -15,6 +15,7 @@ sys.path.insert(0, str(HERE.parent / "sregym-oracle"))
 import analysis as A  # noqa: E402
 import analyze_wp2 as W  # noqa: E402
 import cross_model as CM  # noqa: E402
+import glmm  # noqa: E402
 
 OUT = HERE / "tables"
 ARM_TEX = {"idle": "Idle", "restart_loop": "Restart", "agent_mitigate": "AI-mitigate", "agent_remediate": "AI-remediate",
@@ -24,7 +25,7 @@ WP2_ARMS = {"idle": "Idle", "restart": "Restart", "ai": "AI (Haiku~5.5)", "ai_so
             "ai_hydrogen": "AI (Hydrogen~4)", "ai_gemini38": "AI (Gemini Flash)"}
 WP2_DIRS = ("sregym-wp2", "sregym-wp2-sonnet")  # the stopped Google arm is released but not analyzed
 WP2_TAGS = (("ai", "Haiku"), ("ai_sonnet", "Sonnet"), ("ai_hydrogen", "Hydrogen"), ("ai_gemini38", "Gemini"))
-WP2_PROBLEMS = {  # table order: group A first (SREGym has no durability step), then group B
+WP2_PROBLEMS = {  # table order: unchecked problems first (SREGym has no durability step), then checked ones
     "service_wrong_pod_selection_hotel_reservation": "Wrong pod selector",
     "kafka_poison_pill_hol_block": "Kafka poison pill",
     "secret_rotation_stale_env_credentials_astronomy_shop": "Rotated DB secret",
@@ -46,6 +47,17 @@ def ci(rows, stat):
     return f"{p:.2f} [{lo:.2f}, {hi:.2f}]"
 
 
+def live_flags(d):
+    """Liveness after the arm acted: the app answered /health before round 1 (oracle._round records ready=False when it
+    did not). The same readiness check every arm passes through; it reads no fault criterion."""
+    out = {}
+    for line in (CM.RESULTS / d / "run_evidence.jsonl").read_text().splitlines():
+        e = json.loads(line)
+        r1 = e["rounds"].get("r1")
+        out[(e["problem_id"], e["arm"], e["run_index"])] = r1 is not None and r1.get("ready") is not False
+    return out
+
+
 def datasets():
     out = []
     for _, d, _ in CM.DATASETS:
@@ -56,14 +68,16 @@ def datasets():
 
 
 def table_outcomes(data):
-    lines = [r"\begin{tabular}{llrlllr}", r"\toprule",
-             r"Model & Arm & $N$ & MSR (conventional) & RSR (durable fix) & SSR (temporary) & Time-outs \\", r"\midrule"]
+    lines = [r"\begin{tabular}{llrrlllr}", r"\toprule",
+             r"Model & Arm & $N$ & Live & MSR (conventional) & RSR (durable fix) & SSR (temporary) & Time-outs \\", r"\midrule"]
     for d, rows in data:
         main = [r for r in rows if not CM.peek(r)]
+        live = live_flags(d)
         arms = [a for a in A.ARMS if any(r["arm"] == a for r in main)]
         for i, arm in enumerate(arms):
             g = [r for r in main if r["arm"] == arm]
-            lines.append(f"{MODEL_TEX[d] if i == 0 else ''} & {ARM_TEX[arm]} & {len(g)} & {ci(g, A.rate(CM.mitig))} & "
+            lv = A.rate(lambda r: live[CM.key(r)])(g)
+            lines.append(f"{MODEL_TEX[d] if i == 0 else ''} & {ARM_TEX[arm]} & {len(g)} & {lv:.2f} & {ci(g, A.rate(CM.mitig))} & "
                          f"{ci(g, A.rate(CM.real))} & {ci(g, A.rate(CM.temp))} & {sum(map(CM.timed_out, g))} \\\\")
         lines.append(r"\midrule")
     lines[-1] = r"\bottomrule"
@@ -72,7 +86,8 @@ def table_outcomes(data):
 
 
 def table_contrasts(data):
-    lines = [r"\begin{tabular}{lllrr}", r"\toprule", r"Model & Contrast & Difference in RSR [95\% CI] & OR$_{\mathrm{MH}}$ & $p$ \\",
+    lines = [r"\begin{tabular}{lllrrlr}", r"\toprule",
+             r"Model & Contrast & Difference in RSR [95\% CI] & OR$_{\mathrm{MH}}$ & $p$ & OR$_{\mathrm{GLMM}}$ [95\% CI] & $p_{\mathrm{GLMM}}$ \\",
              r"\midrule"]
     pairs = [("agent_mitigate", "agent_remediate"), ("agent_mitigate", "agent_free"), ("agent_remediate", "agent_free")]
     for d, rows in data:
@@ -87,9 +102,10 @@ def table_contrasts(data):
                 return A.rate(CM.real)(x) - A.rate(CM.real)(y) if x and y else float("nan")
             p, (lo, hi) = A.boot_ci(ra + rb, diff)
             o, pv = A.cmh(ra, rb, CM.real)
-            pstr = "$<$0.001" if pv < 0.001 else f"{pv:.3f}"
+            g = glmm.glmm_contrast(ra, rb, CM.real)
+            pfmt = lambda x: "$<$0.001" if x < 0.001 else f"{x:.3f}"  # noqa: E731
             lines.append(f"{MODEL_TEX[d] if i == 0 else ''} & {ARM_TEX[a]} $-$ {ARM_TEX[b]} & {p:+.2f} [{lo:+.2f}, {hi:+.2f}] & "
-                         f"{o:.2f} & {pstr} \\\\")
+                         f"{o:.2f} & {pfmt(pv)} & {g['or_']:.2f} [{g['lo']:.2f}, {g['hi']:.2f}] & {pfmt(g['p'])} \\\\")
         lines.append(r"\midrule")
     lines[-1] = r"\bottomrule"
     lines.append(r"\end{tabular}")
@@ -149,6 +165,24 @@ def numbers(data):
         m[f"peekSuccess{tag}"] = sum(CM.key(r) in succ for r in ai)
         m[f"peekString{tag}"] = sum(CM.key(r) in string for r in ai)
         m[f"timeouts{tag}"] = sum(map(CM.timed_out, main))
+        live = live_flags(d)
+        is_live = lambda r: live[CM.key(r)]  # noqa: E731
+        idle = [r for r in main if r["arm"] == "idle"]
+        if idle:
+            m[f"liveIdle{tag}"] = f"{A.rate(is_live)(idle):.2f}"
+            m[f"liveIdlePct{tag}"] = f"{A.rate(is_live)(idle) * 100:.0f}"
+        m[f"liveAI{tag}"] = f"{A.rate(is_live)([r for r in main if r['arm'] in CM.AI_ARMS]):.2f}"
+        glmm_p = {}
+        for a, b, nm in (("agent_mitigate", "agent_remediate", "MitRem"), ("agent_mitigate", "agent_free", "MitFree"),
+                         ("agent_remediate", "agent_free", "RemFree")):
+            g = glmm.glmm_contrast([r for r in main if r["arm"] == a], [r for r in main if r["arm"] == b], CM.real)
+            glmm_p[nm] = g["p"]
+            m[f"glmmP{nm}{tag}"] = f"{g['p']:.3f}"
+            m[f"glmmOr{nm}{tag}"] = f"{g['or_']:.2f}"
+        running = 0.0  # Holm step-down over the three contrasts of this model
+        for i, (nm, pv) in enumerate(sorted(glmm_p.items(), key=lambda kv: kv[1])):
+            running = max(running, min(1.0, pv * (len(glmm_p) - i)))
+            m[f"glmmHolm{nm}{tag}"] = f"{running:.3f}"
         mit = [r for r in main if r["arm"] == "agent_mitigate"]
         m[f"mitTempShare{tag}"] = f"{A.ratio(CM.temp, CM.mitig)(mit) * 100:.0f}"
         oc = CM.oracle_cost_summary(rows, d)  # cross_model section 5.8 (descriptive)
@@ -288,8 +322,8 @@ def table_rq4(data):
         cells.setdefault((r["problem"], r["arm"]), Counter())[r["outcome"]] += 1
     lines = [r"\begin{tabular}{llrrrrr}", r"\toprule",
              r"Problem & Arm & $N$ & Not recovered & Temporary & Durable & Unscored \\", r"\midrule"]
-    for group, title in ((True, "Group A: no durability step in SREGym's oracle"), (False, "Group B: SREGym's oracle "
-                                                                                         "replays load or reruns work")):
+    for group, title in ((True, "Unchecked problems: no durability step in SREGym's oracle"),
+                         (False, "Checked problems: SREGym's oracle replays load or reruns work")):
         lines.append(rf"\multicolumn{{7}}{{l}}{{\emph{{{title}}}}} \\")
         for p, name in WP2_PROBLEMS.items():
             if (p in W.GROUP_A) != group:

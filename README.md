@@ -86,7 +86,7 @@ match the committed ones; the figures are byte-identical.
 ```bash
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cd remediation-oracle
-../.venv/bin/python -m unittest discover -s tests             # 41 tests
+../.venv/bin/python -m unittest discover -s tests             # 44 tests
 for s in v3-haiku55-main v3-gemini-main wp4-sonnet-v4 wp4-haiku-v4; do ../.venv/bin/python analysis.py ../results/$s; done
 ../.venv/bin/python cross_model.py                            # results/cross_model.md and results/figures/
 ../.venv/bin/python compare_wp4.py                            # WP4' comparison
@@ -113,7 +113,9 @@ repository, and every later change was added to the log with its date and reason
 `PRE-REGISTRATION.vi.md` is the original and `PRE-REGISTRATION.md` is a translation. The log was not filed with a public
 registry, so its dates rest on the log itself and on the git history of the working repository, exported to
 `docs/pre-registration-history.patch`. The author often committed several entries at once, so a commit date shows that an
-entry existed by then; it does not prove that each entry preceded its runs.
+entry existed by then; it does not prove that each entry preceded its runs. The paper numbers its research questions
+differently from the log: its RQ1 (temporary share), RQ2 (action type), and RQ3 (SREGym) are RQ2, RQ1, and RQ4 in the
+log and in this repository, where RQ3 is the deferred self-report question.
 
 ## Material in Vietnamese
 

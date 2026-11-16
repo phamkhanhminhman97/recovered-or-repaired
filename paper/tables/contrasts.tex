@@ -1,13 +1,13 @@
-\begin{tabular}{lllrr}
+\begin{tabular}{lllrrlr}
 \toprule
-Model & Contrast & Difference in RSR [95\% CI] & OR$_{\mathrm{MH}}$ & $p$ \\
+Model & Contrast & Difference in RSR [95\% CI] & OR$_{\mathrm{MH}}$ & $p$ & OR$_{\mathrm{GLMM}}$ [95\% CI] & $p_{\mathrm{GLMM}}$ \\
 \midrule
-Haiku~5.5 & AI-mitigate $-$ AI-remediate & -0.59 [-0.85, -0.32] & 0.08 & $<$0.001 \\
- & AI-mitigate $-$ AI-free & -0.51 [-0.78, -0.24] & 0.07 & $<$0.001 \\
- & AI-remediate $-$ AI-free & +0.08 [-0.05, +0.23] & 2.59 & 0.039 \\
+Haiku~5.5 & AI-mitigate $-$ AI-remediate & -0.59 [-0.85, -0.32] & 0.08 & $<$0.001 & 0.02 [0.01, 0.05] & $<$0.001 \\
+ & AI-mitigate $-$ AI-free & -0.51 [-0.78, -0.24] & 0.07 & $<$0.001 & 0.01 [0.00, 0.04] & $<$0.001 \\
+ & AI-remediate $-$ AI-free & +0.08 [-0.05, +0.23] & 2.59 & 0.039 & 3.03 [1.14, 8.02] & 0.021 \\
 \midrule
-Gemini Flash & AI-mitigate $-$ AI-remediate & -0.12 [-0.51, +0.26] & 0.68 & 0.268 \\
- & AI-mitigate $-$ AI-free & -0.22 [-0.54, +0.08] & 0.28 & 0.001 \\
- & AI-remediate $-$ AI-free & -0.10 [-0.24, +0.04] & 0.25 & 0.077 \\
+Gemini Flash & AI-mitigate $-$ AI-remediate & -0.12 [-0.51, +0.26] & 0.68 & 0.268 & 0.53 [0.22, 1.30] & 0.164 \\
+ & AI-mitigate $-$ AI-free & -0.22 [-0.54, +0.08] & 0.28 & 0.001 & 0.11 [0.03, 0.42] & $<$0.001 \\
+ & AI-remediate $-$ AI-free & -0.10 [-0.24, +0.04] & 0.25 & 0.077 & 0.26 [0.07, 1.00] & 0.038 \\
 \bottomrule
 \end{tabular}
